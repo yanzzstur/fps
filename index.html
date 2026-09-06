@@ -1,0 +1,1958 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>FPS Aim Trainer</title>
+<style>
+  :root{
+    --accent:#39ff88;
+    --accent2:#ff3860;
+    --bg:#05070a;
+    --panel:rgba(10,14,20,0.75);
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    background:var(--bg);
+    font-family:'Segoe UI', Arial, sans-serif;
+    color:#e8f0ff;
+    user-select:none;
+  }
+  canvas{display:block; touch-action:none;}
+
+  /* Fire button (touch devices) */
+  #fireBtn{
+    position:fixed; right:26px; bottom:34px; width:84px; height:84px;
+    border-radius:50%; z-index:8; display:none;
+    background:radial-gradient(circle at 35% 30%, #ff5b7a, #b8123a);
+    border:3px solid rgba(255,255,255,0.35);
+    box-shadow:0 4px 18px rgba(255,56,96,0.5);
+    color:#fff; font-weight:800; font-size:13px; letter-spacing:0.5px;
+    align-items:center; justify-content:center; text-align:center;
+    -webkit-tap-highlight-color:transparent; user-select:none;
+  }
+  #fireBtn:active{ transform:scale(0.92); }
+
+  /* HUD */
+  #hud{
+    position:fixed; top:0; left:0; width:100%; padding:16px 24px;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    pointer-events:none; z-index:5;
+    font-variant-numeric: tabular-nums;
+  }
+  .hud-box{
+    background:var(--panel);
+    border:1px solid rgba(57,255,136,0.25);
+    border-radius:10px;
+    padding:10px 16px;
+    backdrop-filter:blur(6px);
+    min-width:110px;
+  }
+  .hud-label{font-size:11px; letter-spacing:1.5px; color:#8fa3b8; text-transform:uppercase;}
+  .hud-value{font-size:22px; font-weight:700; color:var(--accent);}
+  #timeBox .hud-value{color:#ffd23f;}
+  #accBox .hud-value{color:#5ec8ff;}
+
+  /* Crosshair */
+  #crosshair{
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:22px; height:22px; pointer-events:none; z-index:5;
+  }
+  #crosshair::before, #crosshair::after{
+    content:''; position:absolute; background:var(--accent);
+    box-shadow:0 0 4px var(--accent);
+  }
+  #crosshair::before{ width:2px; height:22px; left:10px; top:0; }
+  #crosshair::after{ width:22px; height:2px; top:10px; left:0; }
+  #crosshair.hitflash::before, #crosshair.hitflash::after{ background:#fff; }
+
+  /* Enemy HP bars — floated above each target's head, positioned in JS via world-to-screen projection */
+  #targetHpLayer{ position:fixed; inset:0; pointer-events:none; z-index:4; }
+  .target-hp-bar{
+    position:absolute; width:46px; height:6px; margin-left:-23px; margin-top:-6px;
+    background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.25); border-radius:4px;
+    overflow:hidden;
+  }
+  .target-hp-fill{
+    height:100%; width:100%; background:linear-gradient(90deg, var(--accent2), #ff8a3d);
+    transition:width 0.12s ease-out;
+  }
+
+  /* Floating damage numbers — spawned once at the impact point, then animate up & fade */
+  #damageNumberLayer{ position:fixed; inset:0; pointer-events:none; z-index:9; overflow:hidden; }
+  .dmg-number{
+    position:absolute; font-weight:800; font-size:20px; color:#fff;
+    text-shadow:0 0 6px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.9);
+    transform:translate(-50%,-50%);
+    animation:dmgFloat 0.75s ease-out forwards;
+    white-space:nowrap;
+  }
+  .dmg-number.headshot{ color:#ffd23f; font-size:27px; }
+  @keyframes dmgFloat{
+    0%{ transform:translate(-50%,-50%) translateY(0); opacity:1; }
+    100%{ transform:translate(-50%,-50%) translateY(-52px); opacity:0; }
+  }
+
+  /* Kill confirmation label — pops in bigger than the damage number, then drifts up and fades */
+  .kill-label{
+    position:absolute; font-weight:900; font-size:26px; letter-spacing:1px;
+    color:#ff3860; text-shadow:0 0 10px rgba(255,56,96,0.8), 0 2px 3px rgba(0,0,0,0.9);
+    transform:translate(-50%,-50%) scale(0.4);
+    animation:killPop 0.6s cubic-bezier(.2,1.6,.4,1) forwards;
+    white-space:nowrap;
+  }
+  .kill-label.headshot{
+    color:#ffd23f; text-shadow:0 0 10px rgba(255,210,63,0.85), 0 2px 3px rgba(0,0,0,0.9);
+  }
+  @keyframes killPop{
+    0%{ transform:translate(-50%,-50%) scale(0.3); opacity:0; }
+    25%{ transform:translate(-50%,-60%) scale(1.15); opacity:1; }
+    70%{ transform:translate(-50%,-70%) scale(1); opacity:1; }
+    100%{ transform:translate(-50%,-95%) scale(0.9); opacity:0; }
+  }
+
+  /* Hit marker */
+  #hitmarker{
+    position:fixed; top:50%; left:50%; width:30px; height:30px;
+    transform:translate(-50%,-50%) rotate(45deg) scale(0);
+    pointer-events:none; z-index:6; opacity:0;
+  }
+  #hitmarker div{position:absolute; background:var(--accent2);}
+  #hitmarker .h1{width:4px; height:14px; left:0; top:0;}
+  #hitmarker .h2{width:4px; height:14px; right:0; top:0;}
+  #hitmarker .h3{width:4px; height:14px; left:0; bottom:0;}
+  #hitmarker .h4{width:4px; height:14px; right:0; bottom:0;}
+  @keyframes hitpop{
+    0%{ transform:translate(-50%,-50%) rotate(45deg) scale(0.4); opacity:1;}
+    60%{ transform:translate(-50%,-50%) rotate(45deg) scale(1.15); opacity:1;}
+    100%{ transform:translate(-50%,-50%) rotate(45deg) scale(1.3); opacity:0;}
+  }
+  #hitmarker.show{ animation:hitpop 0.28s ease-out forwards; }
+
+  /* Overlays */
+  .overlay{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 50% 40%, rgba(20,30,40,0.9), rgba(2,4,6,0.97));
+    z-index:20; text-align:center; padding:20px;
+  }
+
+  /* Weapon switch buttons */
+  #weaponSwitch{
+    position:fixed; left:20px; bottom:34px; z-index:8; display:none;
+    flex-direction:column; gap:8px;
+  }
+  .weapon-btn{
+    background:var(--panel); border:1px solid rgba(255,255,255,0.2);
+    color:#cfe0ee; font-size:12px; font-weight:700; letter-spacing:0.5px;
+    padding:9px 14px; border-radius:8px; -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation; text-align:left;
+  }
+  .weapon-btn.active{
+    border-color:var(--accent); color:var(--accent);
+    box-shadow:0 0 10px rgba(57,255,136,0.3);
+  }
+  .weapon-btn.editing, #fireBtn.editing, #scopeBtn.editing{
+    outline:2px dashed #ffd23f; outline-offset:4px;
+  }
+
+  #editLayoutBtn{
+    position:fixed; top:100px; right:20px; z-index:9; display:none;
+    background:var(--panel); border:1px solid rgba(255,255,255,0.25);
+    color:#cfe0ee; font-size:11px; font-weight:700; letter-spacing:0.5px;
+    padding:8px 12px; border-radius:8px; -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+  }
+  #editLayoutBtn.active{
+    border-color:#ffd23f; color:#ffd23f;
+    box-shadow:0 0 10px rgba(255,210,63,0.35);
+  }
+
+  #finishBtn{
+    position:fixed; top:150px; right:20px; z-index:9; display:none;
+    background:rgba(150,20,30,0.85); border:1px solid rgba(255,255,255,0.25);
+    color:#fff; font-size:11px; font-weight:700; letter-spacing:0.5px;
+    padding:8px 12px; border-radius:8px; -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+  }
+
+  .btn-secondary{
+    background:transparent; border:1px solid rgba(255,255,255,0.3);
+    color:#cfe0ee; box-shadow:none;
+  }
+  .btn-secondary:hover{ box-shadow:0 6px 14px rgba(255,255,255,0.1); }
+
+  /* Force landscape: block gameplay and prompt rotation while in portrait */
+  #rotateOverlay{
+    position:fixed; inset:0; z-index:999; display:none;
+    background:#05070a; color:#e8f0ff;
+    flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+  }
+  #rotateOverlay .rotate-icon{
+    font-size:52px; margin-bottom:18px;
+    animation:rotateHint 1.6s ease-in-out infinite;
+  }
+  @keyframes rotateHint{
+    0%,100%{ transform:rotate(0deg); }
+    50%{ transform:rotate(90deg); }
+  }
+  #rotateOverlay h2{ margin:0 0 8px; color:var(--accent); font-size:20px; }
+  #rotateOverlay p{ color:#a9bbcc; font-size:14px; max-width:320px; line-height:1.6; margin:0; }
+  @media (orientation: portrait){
+    #rotateOverlay{ display:flex; }
+  }
+
+  /* Scope button (touch) */
+  #scopeBtn{
+    position:fixed; right:128px; bottom:52px; width:58px; height:58px;
+    border-radius:50%; z-index:8; display:none;
+    background:radial-gradient(circle at 35% 30%, #6fd6ff, #1a6ea8);
+    border:3px solid rgba(255,255,255,0.35);
+    box-shadow:0 4px 16px rgba(94,200,255,0.45);
+    color:#fff; font-weight:800; font-size:11px; letter-spacing:0.5px;
+    align-items:center; justify-content:center; text-align:center;
+    -webkit-tap-highlight-color:transparent; user-select:none; touch-action:manipulation;
+  }
+  #scopeBtn:active{ transform:scale(0.92); }
+
+  /* Sniper scope overlay — thick ring lens with duplex crosshair + BDC ladder */
+  #scopeOverlay{
+    position:fixed; inset:0; z-index:15; pointer-events:none; display:none;
+  }
+  #scopeOverlay .scope-ring{
+    position:absolute; top:50%; left:50%;
+    width:62vmin; height:62vmin; max-width:640px; max-height:640px;
+    border-radius:50%; transform:translate(-50%,-50%);
+    box-sizing:border-box;
+    border:2.6vmin solid #17170f;
+    box-shadow:
+      inset 0 0 3vmin rgba(0,0,0,0.65),
+      inset 0 0 0 1px rgba(255,255,255,0.06);
+    background:
+      radial-gradient(circle at 42% 38%, rgba(255,255,255,0.05), transparent 55%);
+  }
+  #scopeOverlay .reticle-svg{
+    position:absolute; top:50%; left:50%;
+    width:62vmin; height:62vmin; max-width:640px; max-height:640px;
+    transform:translate(-50%,-50%);
+  }
+  #scopeOverlay .scope-mount{
+    position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+    width:34vmin; height:11vmin; max-width:340px; max-height:110px;
+    background:linear-gradient(180deg, #3a3f2e 0%, #23281c 60%, #14170f 100%);
+    border-radius:14px 14px 0 0;
+    box-shadow: inset 0 4px 10px rgba(255,255,255,0.06), 0 -2px 12px rgba(0,0,0,0.5);
+  }
+  .panel{
+    background:var(--panel); border:1px solid rgba(57,255,136,0.3);
+    border-radius:16px; padding:40px 50px; max-width:420px; width:100%;
+    box-shadow:0 0 40px rgba(57,255,136,0.08);
+  }
+  .panel h1{
+    margin:0 0 6px; font-size:30px; letter-spacing:1px;
+    color:var(--accent); text-shadow:0 0 12px rgba(57,255,136,0.5);
+  }
+  .panel p{ color:#a9bbcc; font-size:14px; line-height:1.6; margin:8px 0 22px; }
+  .btn{
+    background:linear-gradient(135deg, var(--accent), #1fae63);
+    border:none; color:#00220f; font-weight:700; font-size:16px;
+    padding:14px 34px; border-radius:10px; cursor:pointer;
+    letter-spacing:0.5px; transition:transform .15s, box-shadow .15s;
+    touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+  }
+  .btn:hover{ transform:translateY(-2px); box-shadow:0 6px 18px rgba(57,255,136,0.35); }
+  .stat-row{
+    display:flex; justify-content:space-between; margin:6px 0; font-size:15px;
+    border-bottom:1px dashed rgba(255,255,255,0.08); padding-bottom:6px;
+  }
+
+  /* Control-mode toggle (non-gyro vs gyro) shown in the settings modal */
+  .cms-options{ display:flex; gap:8px; margin-top:14px; }
+  .cms-btn{
+    flex:1; background:transparent; border:1px solid rgba(255,255,255,0.25); color:#cfe0ee;
+    padding:11px 8px; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer;
+    letter-spacing:0.3px; touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+  }
+  .cms-btn.active{ border-color:var(--accent); color:var(--accent); box-shadow:0 0 10px rgba(57,255,136,0.25); }
+  .cms-btn:disabled{ opacity:0.35; cursor:not-allowed; }
+  #gyroSettingsBox{
+    margin-top:14px; padding:14px; background:rgba(255,255,255,0.04);
+    border:1px solid rgba(255,255,255,0.08); border-radius:10px; text-align:left;
+  }
+  .gyro-slider-label{ display:block; font-size:12px; color:#a9bbcc; letter-spacing:0.3px; }
+  .gyro-slider-label input[type=range]{ width:100%; margin-top:8px; accent-color:var(--accent); }
+  .gyro-status{ font-size:12px; color:#ffb35e; margin:10px 0 0; min-height:14px; }
+
+  /* In-game gear button — reopens the gyro settings modal mid-round */
+  #gyroGearBtn{
+    position:fixed; top:200px; right:20px; z-index:9; display:none;
+    background:var(--panel); border:1px solid rgba(255,255,255,0.25);
+    color:#cfe0ee; font-size:17px; width:38px; height:38px; border-radius:8px;
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+  }
+
+  /* Button-size sliders shown only while "ATUR TOMBOL" edit mode is active */
+  #btnSizePanel{
+    position:fixed; top:64px; left:12px; z-index:10; display:none;
+    background:var(--panel); border:1px solid rgba(255,255,255,0.25); border-radius:10px;
+    padding:14px; width:210px;
+  }
+  .bsp-row{ margin-bottom:12px; }
+  .bsp-row:last-child{ margin-bottom:0; }
+  .bsp-row label{ display:block; font-size:11px; color:#a9bbcc; letter-spacing:0.3px; margin-bottom:6px; }
+  .bsp-row input[type=range]{ width:100%; accent-color:var(--accent); }
+  .stat-row span:last-child{ color:var(--accent); font-weight:700; }
+  #hidden{ display:none; }
+  #errorBanner{
+    position:fixed; left:12px; right:12px; bottom:12px; z-index:50;
+    background:rgba(150,20,30,0.92); color:#fff; padding:12px 16px;
+    border-radius:10px; font-size:13px; line-height:1.5; display:none;
+  }
+</style>
+</head>
+<body>
+
+<div id="rotateOverlay">
+  <div class="rotate-icon">📱</div>
+  <h2>Putar Perangkat ke Mode Mendatar</h2>
+  <p>Game ini hanya berjalan dalam mode <b>landscape</b>. Putar perangkatmu ke posisi mendatar (miring) untuk melanjutkan bermain.</p>
+</div>
+
+<div id="targetHpLayer"></div>
+<div id="damageNumberLayer"></div>
+
+<div id="hud" class="hidden" style="display:none;">
+  <div class="hud-box" id="scoreBox">
+    <div class="hud-label">Skor</div>
+    <div class="hud-value" id="scoreVal">0</div>
+  </div>
+  <div class="hud-box" id="timeBox">
+    <div class="hud-label">Waktu</div>
+    <div class="hud-value" id="timeVal">60</div>
+  </div>
+  <div class="hud-box" id="accBox">
+    <div class="hud-label">Akurasi</div>
+    <div class="hud-value" id="accVal">0%</div>
+  </div>
+</div>
+
+<div id="crosshair" style="display:none;"></div>
+<div id="hitmarker" style="display:none;">
+  <div class="h1"></div><div class="h2"></div><div class="h3"></div><div class="h4"></div>
+</div>
+<div id="fireBtn">TEMBAK</div>
+<div id="scopeBtn">SCOPE</div>
+<div id="weaponSwitch">
+  <div class="weapon-btn active" data-weapon="pistol">1 · PISTOL</div>
+  <div class="weapon-btn" data-weapon="sniper">2 · SNIPER</div>
+  <div class="weapon-btn" data-weapon="smg">3 · SMG UMP</div>
+</div>
+<div id="editLayoutBtn">ATUR TOMBOL</div>
+
+<div id="btnSizePanel">
+  <div class="bsp-row">
+    <label>Ukuran Tombol Tembak: <span id="fireSizeVal">35</span> / 100</label>
+    <input type="range" id="fireSizeSlider" min="1" max="100" step="1" value="35">
+  </div>
+  <div class="bsp-row">
+    <label>Ukuran Tombol Scope: <span id="scopeSizeVal">30</span> / 100</label>
+    <input type="range" id="scopeSizeSlider" min="1" max="100" step="1" value="30">
+  </div>
+</div>
+<div id="finishBtn">SELESAI</div>
+<div id="scopeOverlay">
+  <div class="scope-mount"></div>
+  <div class="scope-ring"></div>
+  <svg class="reticle-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <line x1="100" y1="8" x2="100" y2="192" stroke="rgba(18,22,16,0.9)" stroke-width="1.6"/>
+    <line x1="8" y1="100" x2="192" y2="100" stroke="rgba(18,22,16,0.9)" stroke-width="1.6"/>
+    <g stroke="rgba(18,22,16,0.9)" stroke-width="1.6">
+      <line x1="64" y1="118" x2="64" y2="130"/>
+      <line x1="82" y1="118" x2="82" y2="130"/>
+      <line x1="100" y1="118" x2="100" y2="130"/>
+      <line x1="118" y1="118" x2="118" y2="130"/>
+      <line x1="136" y1="118" x2="136" y2="130"/>
+    </g>
+    <g fill="rgba(18,22,16,0.9)" font-size="8" font-family="monospace" text-anchor="middle">
+      <text x="64" y="141">2</text>
+      <text x="82" y="141">4</text>
+      <text x="100" y="141">6</text>
+      <text x="118" y="141">8</text>
+      <text x="136" y="141">10</text>
+    </g>
+    <circle cx="100" cy="100" r="1.8" fill="rgba(220,60,60,0.9)"/>
+  </svg>
+</div>
+<div id="errorBanner"></div>
+
+<div class="overlay" id="startOverlay">
+  <div class="panel">
+    <h1>🎯 FPS AIM TRAINER</h1>
+    <p id="startInstructions">
+      Latih akurasi dan kecepatan tembakmu. Target akan muncul secara acak dan
+      <b>semakin cepat</b> seiring waktu berjalan.
+    </p>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <button class="btn" id="startBtnTimed">MODE WAKTU · 60 DETIK</button>
+      <button class="btn btn-secondary" id="startBtnFree">MODE BEBAS · TANPA WAKTU</button>
+      <button class="btn btn-secondary" id="openGyroSettingsBtn">⚙ PENGATURAN GYRO</button>
+    </div>
+  </div>
+</div>
+
+<button id="gyroGearBtn" title="Pengaturan Gyro">⚙</button>
+
+<div class="overlay" id="gyroModal" style="display:none;">
+  <div class="panel">
+    <h1>📡 Kontrol Gyro</h1>
+    <p>Pilih cara membidik: geser layar/mouse (non-gyro, bawaan) atau miringkan perangkat (gyro).</p>
+    <div class="cms-options">
+      <button type="button" class="cms-btn active" id="modeBtnTouch">🖐 Sentuh / Mouse</button>
+      <button type="button" class="cms-btn" id="modeBtnGyro">📡 Gyroscope</button>
+    </div>
+    <div id="gyroSettingsBox" style="display:none;">
+      <label class="gyro-slider-label">
+        Sensitivitas Gyro: <span id="gyroSensVal">1.5</span>x
+        <input type="range" id="gyroSensSlider" min="0.3" max="3" step="0.1" value="1.5">
+      </label>
+      <button type="button" class="btn btn-secondary" id="gyroCalibrateBtn" style="margin-top:12px; width:100%;">KALIBRASI ULANG</button>
+    </div>
+    <p id="gyroStatusText" class="gyro-status"></p>
+    <button class="btn" id="closeGyroModalBtn" style="margin-top:16px; width:100%;">TUTUP</button>
+  </div>
+</div>
+
+<div class="overlay" id="pauseOverlay" style="display:none;">
+  <div class="panel">
+    <h1>⏸ JEDA</h1>
+    <p>Klik tombol di bawah untuk melanjutkan mode FPS.</p>
+    <button class="btn" id="resumeBtn">LANJUTKAN</button>
+  </div>
+</div>
+
+<div class="overlay" id="endOverlay" style="display:none;">
+  <div class="panel">
+    <h1>SESI SELESAI</h1>
+    <div class="stat-row"><span>Skor Akhir</span><span id="finalScore">0</span></div>
+    <div class="stat-row"><span>Target Kena</span><span id="finalHits">0</span></div>
+    <div class="stat-row"><span>Tembakan</span><span id="finalShots">0</span></div>
+    <div class="stat-row"><span>Akurasi</span><span id="finalAcc">0%</span></div>
+    <div class="stat-row"><span>Streak Terbaik</span><span id="finalStreak">0</span></div>
+    <div style="display:flex; flex-direction:column; gap:12px; margin-top:18px;">
+      <button class="btn" id="restartBtn">MAIN LAGI</button>
+      <button class="btn btn-secondary" id="changeModeBtn">GANTI MODE</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+window.addEventListener('error', function(e){
+  const banner = document.getElementById('errorBanner');
+  if(banner){
+    banner.style.display = 'block';
+    banner.textContent = 'Terjadi kendala teknis: ' + (e.message || 'error tidak diketahui') +
+      '. Coba muat ulang halaman ini.';
+  }
+});
+(function(){
+  if(typeof THREE === 'undefined'){
+    const banner = document.getElementById('errorBanner');
+    banner.style.display = 'block';
+    banner.textContent = 'Gagal memuat mesin grafis 3D (koneksi internet mungkin terputus). Coba muat ulang halaman.';
+    return;
+  }
+  // ---------- Three.js setup ----------
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf4d9a0); // warm midday desert haze
+  scene.fog = new THREE.Fog(0xf0cf95, 14, 34);
+
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(0,0,0);
+
+  let renderer;
+  try{
+    renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false, powerPreference:'default' });
+  }catch(err){
+    const banner = document.getElementById('errorBanner');
+    banner.style.display = 'block';
+    banner.textContent = 'Perangkat/browser ini tidak mendukung grafis 3D (WebGL). Coba browser lain seperti Chrome.';
+    return;
+  }
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  document.body.appendChild(renderer.domElement);
+
+  window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // Lighting — strong warm "sun" key light + soft warm ambient/fill, desert-at-noon mood
+  scene.add(new THREE.AmbientLight(0xffe3b0, 0.95));
+  const sun = new THREE.DirectionalLight(0xfff2cf, 1.3);
+  sun.position.set(-6, 10, 4);
+  scene.add(sun);
+  const fill = new THREE.PointLight(0xffb46b, 0.6, 40);
+  fill.position.set(0, -2, 4);
+  scene.add(fill);
+
+  // Sand ground plane
+  const sandGeo = new THREE.PlaneGeometry(90, 90);
+  const sandMat = new THREE.MeshStandardMaterial({ color:0xd9b26e, roughness:0.95, metalness:0.02 });
+  const sandFloor = new THREE.Mesh(sandGeo, sandMat);
+  sandFloor.rotation.x = -Math.PI/2;
+  sandFloor.position.y = -4.02;
+  scene.add(sandFloor);
+
+  // Faint grid overlay for spatial reference, recolored to a dusty brown/tan
+  const grid = new THREE.GridHelper(60, 40, 0xb9895a, 0xcaa273);
+  grid.position.y = -4;
+  scene.add(grid);
+
+  // Hazy dune horizon backdrop
+  const backGeo = new THREE.PlaneGeometry(90,34);
+  const backMat = new THREE.MeshBasicMaterial({ color:0xe7c48b, side:THREE.DoubleSide, fog:false });
+  const backWall = new THREE.Mesh(backGeo, backMat);
+  backWall.position.set(0,3,-19);
+  scene.add(backWall);
+
+  // Scattered dunes, rocks and dead scrub for depth and atmosphere
+  function addDune(x, z, radius, height, color){
+    const dune = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 12, 8, 0, Math.PI*2, 0, Math.PI/2),
+      new THREE.MeshStandardMaterial({ color, roughness:1, metalness:0 })
+    );
+    dune.scale.y = height/radius;
+    dune.position.set(x, -4, z);
+    scene.add(dune);
+  }
+  addDune(-14, -16, 7, 3.2, 0xd2a969);
+  addDune(11, -17, 9, 2.6, 0xc89c5c);
+  addDune(-4, -20, 6, 2.2, 0xdcb877);
+
+  function addRock(x, z, s, color){
+    const rock = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(s, 0),
+      new THREE.MeshStandardMaterial({ color, roughness:0.9, metalness:0.05 })
+    );
+    rock.position.set(x, -4+s*0.5, z);
+    rock.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+    scene.add(rock);
+  }
+  addRock(-6, -9, 0.5, 0x8a7256);
+  addRock(7, -10, 0.4, 0x7c6549);
+  addRock(3, -7, 0.3, 0x8a7256);
+
+  function addCactus(x, z, scale){
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color:0x4c7a4a, roughness:0.8 });
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.22,1.6,8), mat);
+    trunk.position.y = 0.8;
+    group.add(trunk);
+    const armGeo = new THREE.CylinderGeometry(0.12,0.14,0.7,8);
+    const armL = new THREE.Mesh(armGeo, mat);
+    armL.position.set(-0.28, 1.0, 0);
+    armL.rotation.z = 0.5;
+    group.add(armL);
+    const armR = new THREE.Mesh(armGeo, mat);
+    armR.position.set(0.28, 1.0, 0);
+    armR.rotation.z = -0.5;
+    group.add(armR);
+    group.scale.setScalar(scale);
+    group.position.set(x, -4, z);
+    scene.add(group);
+  }
+  addCactus(-8, -11, 1);
+  addCactus(9, -13, 0.8);
+
+  // ---------- First-person weapons: pistol + sniper (switchable) ----------
+  scene.add(camera); // camera must be in the scene graph for its children to render
+  const NORMAL_FOV = 75;
+  const SCOPE_FOV = 18;
+  const weapons = {};
+
+  function makeMuzzleFlash(){
+    const flash = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09,10,10),
+      new THREE.MeshBasicMaterial({ color:0xffe27a, transparent:true, opacity:0.95 })
+    );
+    flash.visible = false;
+    return flash;
+  }
+
+  // --- Pistol ---
+  (function buildPistol(){
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color:0x232a33, roughness:0.4, metalness:0.7 });
+    const accent = new THREE.MeshStandardMaterial({ color:0x39ff88, emissive:0x0f3a22, roughness:0.3, metalness:0.5 });
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,0.55), mat);
+    body.position.set(0,0,-0.3);
+    group.add(body);
+
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.4,12), mat);
+    barrel.rotation.x = Math.PI/2;
+    barrel.position.set(0,0.025,-0.78);
+    group.add(barrel);
+
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.28,0.12), mat);
+    grip.position.set(0,-0.16,-0.05);
+    grip.rotation.x = 0.35;
+    group.add(grip);
+
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.05,0.05), accent);
+    sight.position.set(0,0.09,-0.4);
+    group.add(sight);
+
+    const muzzleFlash = makeMuzzleFlash();
+    muzzleFlash.position.set(0,0.025,-1.0);
+    group.add(muzzleFlash);
+
+    const basePos = new THREE.Vector3(0.32,-0.32,-0.55);
+    group.position.copy(basePos);
+    group.rotation.y = -0.05;
+    camera.add(group);
+
+    weapons.pistol = { group, basePos, muzzleFlash, recoil:0, recoilKick:0.06, viewKick:0.012, hasScope:false, auto:false, fireRate:260, headDamage:28, bodyDamage:26 };
+  })();
+
+  // --- Sniper rifle ---
+  (function buildSniper(){
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color:0x1c2420, roughness:0.45, metalness:0.55 });
+    const accent = new THREE.MeshStandardMaterial({ color:0x5ec8ff, emissive:0x0a2233, roughness:0.3, metalness:0.5 });
+    const glass = new THREE.MeshStandardMaterial({ color:0x0a1a22, roughness:0.15, metalness:0.3, emissive:0x0d2a33 });
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.13,1.05), mat);
+    body.position.set(0,-0.02,-0.55);
+    group.add(body);
+
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.85,12), mat);
+    barrel.rotation.x = Math.PI/2;
+    barrel.position.set(0,0.0,-1.35);
+    group.add(barrel);
+
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.09,0.16,0.4), mat);
+    stock.position.set(0,-0.08,0.15);
+    group.add(stock);
+
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.09,0.26,0.11), mat);
+    grip.position.set(0,-0.18,-0.28);
+    grip.rotation.x = 0.3;
+    group.add(grip);
+
+    const scopeTube = new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.42,14), accent);
+    scopeTube.rotation.x = Math.PI/2;
+    scopeTube.position.set(0,0.13,-0.55);
+    group.add(scopeTube);
+
+    const scopeLens = new THREE.Mesh(new THREE.CircleGeometry(0.043,14), glass);
+    scopeLens.position.set(0,0.13,-0.34);
+    group.add(scopeLens);
+
+    const muzzleFlash = makeMuzzleFlash();
+    muzzleFlash.scale.setScalar(1.2);
+    muzzleFlash.position.set(0,0.0,-1.78);
+    group.add(muzzleFlash);
+
+    const basePos = new THREE.Vector3(0.3,-0.34,-0.35);
+    group.position.copy(basePos);
+    group.rotation.y = -0.04;
+    group.visible = false;
+    camera.add(group);
+
+    weapons.sniper = { group, basePos, muzzleFlash, recoil:0, recoilKick:0.11, viewKick:0.022, hasScope:true, auto:false, fireRate:900, headDamage:110, bodyDamage:70 };
+  })();
+
+  // --- SMG (UMP) — compact, full-auto submachine gun ---
+  (function buildSMG(){
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color:0x2a2620, roughness:0.5, metalness:0.5 });
+    const matDark = new THREE.MeshStandardMaterial({ color:0x141210, roughness:0.55, metalness:0.4 });
+    const accent = new THREE.MeshStandardMaterial({ color:0xffb020, emissive:0x3a2200, roughness:0.3, metalness:0.5 });
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.13,0.16,0.62), mat);
+    body.position.set(0,0,-0.32);
+    group.add(body);
+
+    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.11,0.1,0.3), matDark);
+    receiver.position.set(0,0.05,-0.1);
+    group.add(receiver);
+
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.028,0.32,10), matDark);
+    barrel.rotation.x = Math.PI/2;
+    barrel.position.set(0,0.01,-0.72);
+    group.add(barrel);
+
+    const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.075,0.32,0.11), matDark);
+    magazine.position.set(0,-0.28,-0.28);
+    magazine.rotation.x = -0.12;
+    group.add(magazine);
+
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.09,0.32), mat);
+    stock.position.set(0,-0.02,0.14);
+    group.add(stock);
+
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.09,0.24,0.1), matDark);
+    grip.position.set(0,-0.16,-0.06);
+    grip.rotation.x = 0.32;
+    group.add(grip);
+
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.018,0.045,0.045), accent);
+    sight.position.set(0,0.085,-0.42);
+    group.add(sight);
+
+    const muzzleFlash = makeMuzzleFlash();
+    muzzleFlash.scale.setScalar(0.9);
+    muzzleFlash.position.set(0,0.01,-0.9);
+    group.add(muzzleFlash);
+
+    const basePos = new THREE.Vector3(0.3,-0.33,-0.5);
+    group.position.copy(basePos);
+    group.rotation.y = -0.05;
+    group.visible = false;
+    camera.add(group);
+
+    weapons.smg = { group, basePos, muzzleFlash, recoil:0, recoilKick:0.045, viewKick:0.007, hasScope:false, auto:true, fireRate:95, headDamage:32, bodyDamage:28 };
+  })();
+
+  let currentWeapon = 'pistol';
+  let scoped = false;
+
+  function triggerRecoil(){
+    const w = weapons[currentWeapon];
+    w.recoil = 1;
+    viewKick += w.viewKick;
+    w.muzzleFlash.visible = true;
+    setTimeout(()=>{ w.muzzleFlash.visible = false; }, 45);
+  }
+
+  function exitScope(){
+    if(!scoped) return;
+    scoped = false;
+    camera.fov = NORMAL_FOV;
+    camera.updateProjectionMatrix();
+    scopeOverlay.style.display = 'none';
+    if(currentWeapon === 'sniper') weapons.sniper.group.visible = true;
+    if(running) crosshair.style.display = 'block';
+  }
+
+  function enterScope(){
+    if(weapons[currentWeapon] && !weapons[currentWeapon].hasScope) return;
+    if(!running || paused || scoped) return;
+    scoped = true;
+    camera.fov = SCOPE_FOV;
+    camera.updateProjectionMatrix();
+    weapons.sniper.group.visible = false;
+    crosshair.style.display = 'none';
+    scopeOverlay.style.display = 'block';
+  }
+
+  function setActiveWeapon(name){
+    if(!weapons[name] || currentWeapon === name) return;
+    exitScope();
+    stopFiring();
+    currentWeapon = name;
+    weapons.pistol.group.visible = (name === 'pistol');
+    weapons.sniper.group.visible = (name === 'sniper');
+    weapons.smg.group.visible = (name === 'smg');
+    document.querySelectorAll('.weapon-btn').forEach(btn=>{
+      btn.classList.toggle('active', btn.dataset.weapon === name);
+    });
+    scopeBtn.style.display = (name === 'sniper' && running) ? 'flex' : 'none';
+  }
+
+  // ---------- Firing: single-shot for pistol/sniper, hold-to-fire for full-auto (SMG) ----------
+  let firing = false;
+  let autoFireAccum = 0;
+
+  function startFiring(){
+    if(!running || paused) return;
+    const w = weapons[currentWeapon];
+    if(!w) return;
+    shoot();
+    if(w.auto){
+      firing = true;
+      autoFireAccum = 0;
+    }
+  }
+  function stopFiring(){
+    firing = false;
+    autoFireAccum = 0;
+  }
+
+  // Target group (humanoid-style characters instead of plain balls)
+  const targets = []; // {group, born, life, drift}
+  const dyingTargets = []; // targets currently playing their kill-fall animation before final removal
+  const sparkBursts = []; // active particle bursts spawned on kill
+
+  function randRange(a,b){ return a + Math.random()*(b-a); }
+
+  function makeCharacterMaterials(){
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0xff3860, emissive: 0x551122, roughness:0.4, metalness:0.15
+    });
+    const headMat = new THREE.MeshStandardMaterial({
+      color: 0xffcf9c, emissive: 0x552211, roughness:0.5, metalness:0.05
+    });
+    return { bodyMat, headMat };
+  }
+
+  function createCharacter(){
+    const group = new THREE.Group();
+    const { bodyMat, headMat } = makeCharacterMaterials();
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 16), headMat);
+    head.position.y = 1.55;
+    head.userData.isHead = true;
+    group.add(head);
+
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.28, 0.9, 12), bodyMat);
+    torso.position.y = 0.95;
+    group.add(torso);
+
+    const armGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.75, 8);
+    const armL = new THREE.Mesh(armGeo, bodyMat);
+    armL.position.set(-0.42, 0.95, 0);
+    armL.rotation.z = 0.18;
+    group.add(armL);
+    const armR = new THREE.Mesh(armGeo, bodyMat);
+    armR.position.set(0.42, 0.95, 0);
+    armR.rotation.z = -0.18;
+    group.add(armR);
+
+    const legGeo = new THREE.CylinderGeometry(0.13, 0.11, 0.85, 8);
+    const legL = new THREE.Mesh(legGeo, bodyMat);
+    legL.position.set(-0.16, 0.15, 0);
+    group.add(legL);
+    const legR = new THREE.Mesh(legGeo, bodyMat);
+    legR.position.set(0.16, 0.15, 0);
+    group.add(legR);
+
+    group.traverse(obj => { obj.userData.isTargetPart = true; });
+    group.userData.isTargetRoot = true;
+    // recenter so scaling/positioning behaves like the old ball target
+    group.position.y -= 0.9;
+    return { group, head };
+  }
+
+  const TARGET_MAX_HP = 100; // enemy health pool — damage per hit is defined per-weapon above
+
+  function spawnTarget(){
+    const { group, head } = createCharacter();
+    const scale = randRange(sizeMin, sizeMax);
+    group.scale.setScalar(scale);
+
+    const depth = randRange(5, 8.5);
+    const spread = depth * 0.55;
+    group.position.x = randRange(-spread, spread);
+    group.position.y += randRange(-spread*0.5, spread*0.5);
+    group.position.z = -depth;
+    group.rotation.y = Math.PI; // face the player
+    scene.add(group);
+
+    const hpBarEl = document.createElement('div');
+    hpBarEl.className = 'target-hp-bar';
+    hpBarEl.innerHTML = '<div class="target-hp-fill"></div>';
+    targetHpLayer.appendChild(hpBarEl);
+
+    targets.push({
+      group,
+      head,
+      hp: TARGET_MAX_HP,
+      maxHp: TARGET_MAX_HP,
+      hpBarEl,
+      hpFillEl: hpBarEl.firstElementChild,
+      born: performance.now(),
+      life: currentLife,
+      driftDir: new THREE.Vector3(randRange(-1,1), randRange(-1,1), 0).normalize(),
+      driftSpeed: currentDrift * randRange(0.5,1)
+    });
+  }
+
+  function detachTarget(t){
+    if(t.hpBarEl && t.hpBarEl.parentNode) t.hpBarEl.parentNode.removeChild(t.hpBarEl);
+    const i = targets.indexOf(t);
+    if(i>-1) targets.splice(i,1);
+  }
+
+  function removeTarget(t){
+    detachTarget(t);
+    scene.remove(t.group);
+  }
+
+  function clearKillEffects(){
+    dyingTargets.forEach(d=>scene.remove(d.group));
+    dyingTargets.length = 0;
+    sparkBursts.forEach(b=>{ scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose(); });
+    sparkBursts.length = 0;
+  }
+
+  // Keeps each target's floating HP bar pinned above its head in screen space
+  const hpBarWorldPos = new THREE.Vector3();
+  function updateTargetHpBars(){
+    scene.updateMatrixWorld(); // ensure this frame's drift/rotation is reflected before projecting
+    const w = renderer.domElement.clientWidth;
+    const h = renderer.domElement.clientHeight;
+    for(const t of targets){
+      t.head.getWorldPosition(hpBarWorldPos);
+      hpBarWorldPos.y += 0.42 * t.group.scale.y;
+      hpBarWorldPos.project(camera);
+      if(hpBarWorldPos.z > 1){
+        t.hpBarEl.style.display = 'none';
+        continue;
+      }
+      const x = (hpBarWorldPos.x * 0.5 + 0.5) * w;
+      const y = (-hpBarWorldPos.y * 0.5 + 0.5) * h;
+      t.hpBarEl.style.display = 'block';
+      t.hpBarEl.style.left = x + 'px';
+      t.hpBarEl.style.top = y + 'px';
+      t.hpFillEl.style.width = Math.max(0, (t.hp / t.maxHp) * 100) + '%';
+    }
+  }
+
+  // One-shot floating combat text at the exact raycast impact point
+  function spawnDamageNumber(worldPoint, amount, isHeadshot){
+    const w = renderer.domElement.clientWidth;
+    const h = renderer.domElement.clientHeight;
+    const v = worldPoint.clone().project(camera);
+    if(v.z > 1) return; // impact point somehow behind camera — skip
+    const x = (v.x * 0.5 + 0.5) * w + randRange(-10, 10);
+    const y = (-v.y * 0.5 + 0.5) * h;
+    const el = document.createElement('div');
+    el.className = 'dmg-number' + (isHeadshot ? ' headshot' : '');
+    el.textContent = '-' + amount;
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    damageNumberLayer.appendChild(el);
+    el.addEventListener('animationend', ()=>{ if(el.parentNode) el.parentNode.removeChild(el); });
+  }
+
+  // Bigger "KILL!" / "HEADSHOT!" pop at the kill point
+  function spawnKillLabel(worldPoint, isHeadshot){
+    const w = renderer.domElement.clientWidth;
+    const h = renderer.domElement.clientHeight;
+    const v = worldPoint.clone().project(camera);
+    if(v.z > 1) return;
+    const x = (v.x * 0.5 + 0.5) * w;
+    const y = (-v.y * 0.5 + 0.5) * h;
+    const el = document.createElement('div');
+    el.className = 'kill-label' + (isHeadshot ? ' headshot' : '');
+    el.textContent = isHeadshot ? 'HEADSHOT!' : 'KILL!';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    damageNumberLayer.appendChild(el);
+    el.addEventListener('animationend', ()=>{ if(el.parentNode) el.parentNode.removeChild(el); });
+  }
+
+  // Small glowing particle burst at the kill point (world-space, rendered in the 3D scene)
+  function spawnKillSparks(worldPoint, isHeadshot){
+    const count = 12;
+    const positions = new Float32Array(count*3);
+    const velocities = [];
+    for(let i=0;i<count;i++){
+      positions[i*3+0] = worldPoint.x;
+      positions[i*3+1] = worldPoint.y;
+      positions[i*3+2] = worldPoint.z;
+      const theta = Math.random()*Math.PI*2;
+      const phi = Math.random()*Math.PI;
+      const speed = randRange(1.2, 3.2);
+      velocities.push(new THREE.Vector3(
+        Math.sin(phi)*Math.cos(theta)*speed,
+        Math.cos(phi)*speed + 1.2,
+        Math.sin(phi)*Math.sin(theta)*speed
+      ));
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: isHeadshot ? 0xffd23f : 0xff3860,
+      size: 0.09,
+      transparent: true,
+      opacity: 1,
+      depthWrite: false
+    });
+    const points = new THREE.Points(geo, mat);
+    scene.add(points);
+    sparkBursts.push({ points, velocities, elapsed:0, duration:550 });
+  }
+
+  function updateSparkBursts(dt){
+    for(let i=sparkBursts.length-1;i>=0;i--){
+      const b = sparkBursts[i];
+      b.elapsed += dt*1000;
+      const p = Math.min(b.elapsed/b.duration, 1);
+      const pos = b.points.geometry.attributes.position;
+      for(let j=0;j<b.velocities.length;j++){
+        const v = b.velocities[j];
+        v.y -= dt*4; // gravity pulls the sparks down as they fly out
+        pos.array[j*3+0] += v.x*dt;
+        pos.array[j*3+1] += v.y*dt;
+        pos.array[j*3+2] += v.z*dt;
+      }
+      pos.needsUpdate = true;
+      b.points.material.opacity = 1 - p;
+      if(p >= 1){
+        scene.remove(b.points);
+        b.points.geometry.dispose();
+        b.points.material.dispose();
+        sparkBursts.splice(i,1);
+      }
+    }
+  }
+
+  // Ragdoll-style fall: tips the character over on a random axis while shrinking, then hands off to final removal
+  function updateDyingTargets(dt){
+    for(let i=dyingTargets.length-1;i>=0;i--){
+      const d = dyingTargets[i];
+      d.elapsed += dt*1000;
+      const p = Math.min(d.elapsed/d.duration, 1);
+      const fall = p*1.4;
+      if(d.fallAxis === 'x') d.group.rotation.x = d.fallSign*fall;
+      else d.group.rotation.z = d.fallSign*fall;
+      d.group.scale.setScalar(Math.max(d.baseScale*(1-p*0.85), 0.02));
+      d.group.position.y -= dt*1.6*p;
+      if(p >= 1){
+        scene.remove(d.group);
+        dyingTargets.splice(i,1);
+      }
+    }
+  }
+
+  // Orchestrates every "kill" feedback layer: sound, screen label, particles, and the fall animation
+  function triggerKillEffect(t, hitPoint, isHeadshot){
+    playKillSound();
+    spawnKillLabel(hitPoint, isHeadshot);
+    spawnKillSparks(hitPoint, isHeadshot);
+    detachTarget(t);
+    dyingTargets.push({
+      group: t.group,
+      elapsed: 0,
+      duration: 480,
+      fallAxis: Math.random() < 0.5 ? 'x' : 'z',
+      fallSign: Math.random() < 0.5 ? 1 : -1,
+      baseScale: t.group.scale.x
+    });
+  }
+
+  // ---------- Look controls: mouse (pointer lock) or touch drag ----------
+  const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  let yaw = 0, pitch = 0;
+  let viewKick = 0; // small camera "kick" from recoil, decays each frame
+  const mouseSensitivity = 0.0022;
+  const touchSensitivity = 0.0042;
+
+  function applyLook(){
+    pitch = Math.max(-1.3, Math.min(1.3, pitch));
+    const displayPitch = Math.min(1.4, pitch + viewKick);
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yaw);
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), displayPitch);
+    camera.quaternion.copy(qYaw.multiply(qPitch));
+  }
+
+  function onMouseMove(e){
+    if(document.pointerLockElement !== renderer.domElement) return;
+    const s = mouseSensitivity * (scoped ? 0.3 : 1);
+    yaw   -= e.movementX * s;
+    pitch -= e.movementY * s;
+    applyLook();
+  }
+  document.addEventListener('mousemove', onMouseMove);
+
+  // Right mouse button: hold to look through the sniper scope (desktop)
+  renderer.domElement.addEventListener('contextmenu', (e)=> e.preventDefault());
+  renderer.domElement.addEventListener('mousedown', (e)=>{
+    if(e.button === 2) enterScope();
+  });
+  window.addEventListener('mouseup', (e)=>{
+    if(e.button === 2) exitScope();
+  });
+
+  // Touch: drag anywhere on the canvas to look around, tap the fire button to shoot
+  let lastTouchX = 0, lastTouchY = 0, touchLooking = false;
+
+  renderer.domElement.addEventListener('touchstart', (e)=>{
+    if(!running || gyroEnabled) return;
+    const t = e.touches[0];
+    lastTouchX = t.clientX;
+    lastTouchY = t.clientY;
+    touchLooking = true;
+  }, { passive:true });
+
+  renderer.domElement.addEventListener('touchmove', (e)=>{
+    if(!touchLooking || !running || paused || gyroEnabled) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    const dx = t.clientX - lastTouchX;
+    const dy = t.clientY - lastTouchY;
+    lastTouchX = t.clientX;
+    lastTouchY = t.clientY;
+    yaw   -= dx * touchSensitivity * (scoped ? 0.35 : 1);
+    pitch -= dy * touchSensitivity * (scoped ? 0.35 : 1);
+    applyLook();
+  }, { passive:false });
+
+  let ignoreNextClick = false;
+  renderer.domElement.addEventListener('touchend', ()=>{
+    touchLooking = false;
+    ignoreNextClick = true;
+    setTimeout(()=>{ ignoreNextClick = false; }, 400);
+  }, { passive:true });
+
+  // ---------- Gyroscope aim mode (opt-in) — non-gyro touch/mouse control is the fixed default ----------
+  let gyroEnabled = false;
+  let gyroSensitivity = 1.5;
+  const gyroSupported = (typeof DeviceOrientationEvent !== 'undefined');
+  let lastGyroBeta = null, lastGyroGamma = null;
+  let gyroListenerAttached = false;
+  let modalPausedGame = false;
+  let gyroEventReceived = false;
+
+  // deviceorientation's beta/gamma are always reported in the device's natural
+  // (portrait) frame — since this game is landscape-locked, they must be remapped
+  // to the actual screen orientation or tilting the phone left/right barely does anything.
+  function getScreenAngle(){
+    if(screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
+    if(typeof window.orientation === 'number') return window.orientation;
+    return 0;
+  }
+
+  function onDeviceOrientation(e){
+    if(!gyroEnabled) return;
+    if(e.beta === null || e.gamma === null) return;
+    gyroEventReceived = true;
+
+    const angle = getScreenAngle();
+    let screenBeta, screenGamma;
+    if(angle === 90){
+      screenBeta = -e.gamma; screenGamma = e.beta;
+    } else if(angle === -90 || angle === 270){
+      screenBeta = e.gamma; screenGamma = -e.beta;
+    } else if(angle === 180){
+      screenBeta = -e.beta; screenGamma = -e.gamma;
+    } else {
+      screenBeta = e.beta; screenGamma = e.gamma;
+    }
+
+    if(lastGyroBeta === null){
+      lastGyroBeta = screenBeta; lastGyroGamma = screenGamma;
+      return;
+    }
+    const dGamma = screenGamma - lastGyroGamma; // tilt left/right relative to the screen -> yaw
+    const dBeta  = screenBeta  - lastGyroBeta;  // tilt forward/back relative to the screen -> pitch
+    lastGyroBeta = screenBeta; lastGyroGamma = screenGamma;
+    if(Math.abs(dGamma) > 40 || Math.abs(dBeta) > 40) return; // sensor glitch / angle flip — skip this tick
+    const s = 0.02 * gyroSensitivity * (scoped ? 0.35 : 1);
+    yaw   -= dGamma * s;
+    pitch -= dBeta  * s;
+    applyLook();
+  }
+
+  function attachGyroListener(){
+    if(gyroListenerAttached) return;
+    window.addEventListener('deviceorientation', onDeviceOrientation);
+    gyroListenerAttached = true;
+  }
+
+  function recalibrateGyro(){
+    lastGyroBeta = null;
+    lastGyroGamma = null;
+  }
+
+  function enableGyro(){
+    if(!gyroSupported){
+      gyroStatusText.textContent = 'Perangkat ini tidak mendukung gyroscope.';
+      return false;
+    }
+    const finishEnable = ()=>{
+      attachGyroListener();
+      recalibrateGyro();
+      gyroEnabled = true;
+      gyroEventReceived = false;
+      touchLooking = false; // hand aiming over to the gyro cleanly
+      gyroStatusText.textContent = 'Gyro aktif — miringkan perangkat untuk membidik.';
+      // If no sensor data shows up shortly, the browser almost always blocks it silently —
+      // most commonly because the page isn't served over HTTPS (file:// won't work).
+      setTimeout(()=>{
+        if(gyroEnabled && !gyroEventReceived){
+          gyroStatusText.textContent = 'Tidak ada data sensor gyroscope. Pastikan halaman dibuka lewat HTTPS (bukan file://) dan coba lagi.';
+        }
+      }, 1500);
+    };
+    if(typeof DeviceOrientationEvent.requestPermission === 'function'){
+      DeviceOrientationEvent.requestPermission().then(state=>{
+        if(state === 'granted'){ finishEnable(); }
+        else{ gyroStatusText.textContent = 'Izin gyroscope ditolak. Tetap pakai mode sentuh.'; setModeButtons(false); }
+      }).catch(()=>{
+        gyroStatusText.textContent = 'Gagal meminta izin gyroscope.'; setModeButtons(false);
+      });
+    } else {
+      finishEnable();
+    }
+    return true;
+  }
+
+  function disableGyro(){
+    gyroEnabled = false;
+    gyroStatusText.textContent = '';
+  }
+
+  window.addEventListener('orientationchange', ()=>{
+    if(gyroEnabled) recalibrateGyro(); // avoid a jump when flipping landscape-left <-> landscape-right
+  });
+
+  const openGyroSettingsBtn = document.getElementById('openGyroSettingsBtn');
+  const gyroGearBtn = document.getElementById('gyroGearBtn');
+  const gyroModal = document.getElementById('gyroModal');
+  const closeGyroModalBtn = document.getElementById('closeGyroModalBtn');
+  const modeBtnTouch = document.getElementById('modeBtnTouch');
+  const modeBtnGyro = document.getElementById('modeBtnGyro');
+  const gyroSettingsBox = document.getElementById('gyroSettingsBox');
+  const gyroSensSlider = document.getElementById('gyroSensSlider');
+  const gyroSensVal = document.getElementById('gyroSensVal');
+  const gyroCalibrateBtn = document.getElementById('gyroCalibrateBtn');
+  const gyroStatusText = document.getElementById('gyroStatusText');
+
+  function setModeButtons(isGyro){
+    modeBtnTouch.classList.toggle('active', !isGyro);
+    modeBtnGyro.classList.toggle('active', isGyro);
+    gyroSettingsBox.style.display = isGyro ? 'block' : 'none';
+  }
+
+  function openGyroModal(){
+    if(running && !paused){ paused = true; modalPausedGame = true; }
+    if(document.pointerLockElement) document.exitPointerLock(); // free the cursor so modal buttons are clickable
+    gyroModal.style.display = 'flex';
+  }
+  function closeGyroModal(){
+    gyroModal.style.display = 'none';
+    if(modalPausedGame){
+      modalPausedGame = false;
+      if(running){
+        if(isTouchDevice) paused = false;
+        else requestLock(); // pointerlockchange will clear `paused` once the lock re-acquires
+      }
+    }
+  }
+
+  openGyroSettingsBtn.addEventListener('click', openGyroModal);
+  gyroGearBtn.addEventListener('click', openGyroModal);
+  closeGyroModalBtn.addEventListener('click', closeGyroModal);
+
+  modeBtnTouch.addEventListener('click', ()=>{
+    disableGyro();
+    setModeButtons(false);
+  });
+  modeBtnGyro.addEventListener('click', ()=>{
+    const ok = enableGyro();
+    setModeButtons(ok && gyroSupported);
+  });
+
+  gyroSensSlider.addEventListener('input', ()=>{
+    gyroSensitivity = parseFloat(gyroSensSlider.value);
+    gyroSensVal.textContent = gyroSensitivity.toFixed(1);
+  });
+
+  gyroCalibrateBtn.addEventListener('click', recalibrateGyro);
+
+  if(!gyroSupported){
+    modeBtnGyro.disabled = true;
+    gyroStatusText.textContent = 'Perangkat ini tidak mendukung gyroscope.';
+  }
+
+  // ---------- Difficulty / game state ----------
+  const GAME_DURATION = 60; // seconds
+  let running = false, paused = false, timeLeft = GAME_DURATION;
+  let gameMode = 'timed'; // 'timed' or 'free'
+  let score = 0, hits = 0, shots = 0;
+  let streak = 0, bestStreak = 0;
+  let lastSpawn = 0;
+  let elapsed = 0;
+
+  // ramps: gets a bit faster over the run
+  let spawnInterval = 1400;  // ms
+  let currentLife = 2800;    // ms a target stays alive
+  let currentDrift = 0.3;    // drift speed
+  let sizeMin = 0.55, sizeMax = 0.85;
+
+  function updateDifficulty(t){
+    const p = Math.min(t / GAME_DURATION, 1); // 0..1 progress
+    spawnInterval = 1400 - p*500;      // 1400ms -> 900ms (slower target spawn rate)
+    currentLife   = 2800 - p*900;      // 2800ms -> 1900ms (targets linger longer before vanishing)
+    currentDrift  = 0.3 + p*0.9;       // 0.3 -> 1.2
+    sizeMin = 0.55 - p*0.15;
+    sizeMax = 0.85 - p*0.15;
+  }
+
+  const raycaster = new THREE.Raycaster();
+  const centerNDC = new THREE.Vector2(0,0);
+
+  // ---------- Synthesized gunshot sound (no external audio file needed) ----------
+  let audioCtx = null;
+  function ensureAudio(){
+    if(!audioCtx){
+      try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(err){ /* audio unsupported */ }
+    } else if(audioCtx.state === 'suspended'){
+      audioCtx.resume();
+    }
+  }
+
+  function playShotSound(){
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+
+    // Noise burst = the sharp "crack"
+    const bufferSize = Math.floor(audioCtx.sampleRate * 0.18);
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for(let i=0;i<bufferSize;i++){
+      data[i] = (Math.random()*2-1) * Math.pow(1 - i/bufferSize, 2);
+    }
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+
+    const noiseFilter = audioCtx.createBiquadFilter();
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.setValueAtTime(3500, now);
+    noiseFilter.frequency.exponentialRampToValueAtTime(500, now+0.15);
+
+    const noiseGain = audioCtx.createGain();
+    noiseGain.gain.setValueAtTime(0.9, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now+0.16);
+
+    noise.connect(noiseFilter).connect(noiseGain).connect(audioCtx.destination);
+
+    // Low sine punch = the "thump"
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(45, now+0.12);
+
+    const oscGain = audioCtx.createGain();
+    oscGain.gain.setValueAtTime(0.7, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now+0.14);
+
+    osc.connect(oscGain).connect(audioCtx.destination);
+
+    noise.start(now); noise.stop(now+0.18);
+    osc.start(now); osc.stop(now+0.14);
+  }
+
+  // Kill-confirm sound: a quick low thud followed by a bright two-note "ding"
+  function playKillSound(){
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+
+    const thump = audioCtx.createOscillator();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(220, now);
+    thump.frequency.exponentialRampToValueAtTime(55, now+0.1);
+    const thumpGain = audioCtx.createGain();
+    thumpGain.gain.setValueAtTime(0.8, now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now+0.12);
+    thump.connect(thumpGain).connect(audioCtx.destination);
+    thump.start(now); thump.stop(now+0.12);
+
+    const ding1 = audioCtx.createOscillator();
+    ding1.type = 'triangle';
+    ding1.frequency.setValueAtTime(760, now+0.05);
+    const ding1Gain = audioCtx.createGain();
+    ding1Gain.gain.setValueAtTime(0.0001, now+0.05);
+    ding1Gain.gain.exponentialRampToValueAtTime(0.5, now+0.06);
+    ding1Gain.gain.exponentialRampToValueAtTime(0.001, now+0.22);
+    ding1.connect(ding1Gain).connect(audioCtx.destination);
+    ding1.start(now+0.05); ding1.stop(now+0.22);
+
+    const ding2 = audioCtx.createOscillator();
+    ding2.type = 'triangle';
+    ding2.frequency.setValueAtTime(1140, now+0.14);
+    const ding2Gain = audioCtx.createGain();
+    ding2Gain.gain.setValueAtTime(0.0001, now+0.14);
+    ding2Gain.gain.exponentialRampToValueAtTime(0.45, now+0.15);
+    ding2Gain.gain.exponentialRampToValueAtTime(0.001, now+0.34);
+    ding2.connect(ding2Gain).connect(audioCtx.destination);
+    ding2.start(now+0.14); ding2.stop(now+0.34);
+  }
+
+  const scoreVal = document.getElementById('scoreVal');
+  const timeVal  = document.getElementById('timeVal');
+  const accVal   = document.getElementById('accVal');
+  const crosshair = document.getElementById('crosshair');
+  const hitmarker = document.getElementById('hitmarker');
+  const hud = document.getElementById('hud');
+  const targetHpLayer = document.getElementById('targetHpLayer');
+  const damageNumberLayer = document.getElementById('damageNumberLayer');
+  const scopeOverlay = document.getElementById('scopeOverlay');
+  const scopeBtn = document.getElementById('scopeBtn');
+  const weaponSwitch = document.getElementById('weaponSwitch');
+
+  function updateHUD(){
+    scoreVal.textContent = score;
+    if(gameMode === 'free'){
+      const totalSec = Math.floor(elapsed);
+      const mm = String(Math.floor(totalSec/60)).padStart(2,'0');
+      const ss = String(totalSec%60).padStart(2,'0');
+      timeVal.textContent = mm+':'+ss;
+    } else {
+      timeVal.textContent = Math.ceil(timeLeft);
+    }
+    const acc = shots>0 ? Math.round((hits/shots)*100) : 0;
+    accVal.textContent = acc + '%';
+  }
+
+  function flashHitmarker(){
+    hitmarker.style.display = 'block';
+    hitmarker.classList.remove('show');
+    void hitmarker.offsetWidth; // reflow
+    hitmarker.classList.add('show');
+  }
+
+  function flashCrosshair(){
+    crosshair.classList.add('hitflash');
+    setTimeout(()=>crosshair.classList.remove('hitflash'), 90);
+  }
+
+  function shoot(){
+    if(!running || paused) return;
+    shots++;
+    playShotSound();
+    triggerRecoil();
+    raycaster.setFromCamera(centerNDC, camera);
+    const groups = targets.map(t=>t.group);
+    const intersects = raycaster.intersectObjects(groups, true);
+    if(intersects.length>0){
+      const hitPart = intersects[0].object;
+      const isHeadshot = !!hitPart.userData.isHead;
+      let obj = hitPart;
+      while(obj && !obj.userData.isTargetRoot){ obj = obj.parent; }
+      const t = targets.find(tt=>tt.group===obj);
+      if(t){
+        const w = weapons[currentWeapon];
+        const damage = isHeadshot ? w.headDamage : w.bodyDamage;
+        t.hp -= damage;
+        hits++;
+        streak++;
+        bestStreak = Math.max(bestStreak, streak);
+        flashHitmarker();
+        spawnDamageNumber(intersects[0].point, damage, isHeadshot);
+        score += damage; // points scale with actual damage dealt (headshots pay more)
+        if(t.hp <= 0){
+          // kill bonus on top of damage score — faster reaction = more points
+          const ageRatio = 1 - Math.min((performance.now()-t.born)/t.life, 1);
+          score += 100 + Math.round(ageRatio*50);
+          triggerKillEffect(t, intersects[0].point, isHeadshot);
+          spawnTarget();
+        }
+      }
+    } else {
+      streak = 0;
+      flashCrosshair();
+    }
+    updateHUD();
+  }
+
+  renderer.domElement.addEventListener('mousedown', (e)=>{
+    if(!running || isTouchDevice || e.button === 2) return; // right button reserved for scope
+    if(document.pointerLockElement !== renderer.domElement){
+      requestLock();
+      return;
+    }
+    startFiring();
+  });
+  window.addEventListener('mouseup', (e)=>{
+    if(e.button === 2) return;
+    stopFiring();
+  });
+
+  // ---------- Draggable buttons: reposition freely, anytime ----------
+  let editMode = false;
+
+  function pointFromEvent(e){
+    if(e.touches && e.touches[0]) return { x:e.touches[0].clientX, y:e.touches[0].clientY };
+    if(e.changedTouches && e.changedTouches[0]) return { x:e.changedTouches[0].clientX, y:e.changedTouches[0].clientY };
+    return { x:e.clientX, y:e.clientY };
+  }
+
+  function pinToLeftTop(el){
+    if(el.style.left) return;
+    const r = el.getBoundingClientRect();
+    el.style.left = r.left + 'px';
+    el.style.top = r.top + 'px';
+    el.style.right = 'auto';
+    el.style.bottom = 'auto';
+  }
+
+  function clampPos(el, left, top){
+    const maxLeft = window.innerWidth - el.offsetWidth - 4;
+    const maxTop = window.innerHeight - el.offsetHeight - 4;
+    return {
+      left: Math.max(4, Math.min(maxLeft, left)),
+      top: Math.max(4, Math.min(maxTop, top))
+    };
+  }
+
+  // Generic drag-to-reposition for buttons with a simple tap action (fire, weapon switch).
+  // Only active while "ATUR TOMBOL" edit mode is on — otherwise the button behaves normally.
+  function enableDrag(el, onTap){
+    let drag = null, moved = false;
+    function down(e){
+      const p = pointFromEvent(e);
+      moved = false;
+      if(editMode){
+        pinToLeftTop(el);
+        drag = { x:p.x, y:p.y, left:parseFloat(el.style.left), top:parseFloat(el.style.top) };
+        if(e.cancelable) e.preventDefault();
+      } else {
+        drag = null;
+      }
+    }
+    function move(e){
+      if(!drag) return;
+      const p = pointFromEvent(e);
+      const dx = p.x - drag.x, dy = p.y - drag.y;
+      if(Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      const pos = clampPos(el, drag.left + dx, drag.top + dy);
+      el.style.left = pos.left + 'px';
+      el.style.top = pos.top + 'px';
+      if(e.cancelable) e.preventDefault();
+    }
+    function up(e){
+      if(editMode){ drag = null; return; }
+      if(!moved && onTap){
+        if(e.cancelable) e.preventDefault();
+        onTap(e);
+      }
+      drag = null;
+    }
+    el.addEventListener('touchstart', down, { passive:false });
+    el.addEventListener('touchmove', move, { passive:false });
+    el.addEventListener('touchend', up, { passive:false });
+    el.addEventListener('mousedown', down);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+
+  const fireBtn = document.getElementById('fireBtn');
+
+  // Fire button: press-and-hold to fire (full-auto weapons keep firing while held).
+  // In edit mode, the same press instead drags the button to a new spot.
+  let fireDrag = null;
+  function fireDown(e){
+    if(e.cancelable) e.preventDefault();
+    const p = pointFromEvent(e);
+    if(editMode){
+      pinToLeftTop(fireBtn);
+      fireDrag = { x:p.x, y:p.y, left:parseFloat(fireBtn.style.left), top:parseFloat(fireBtn.style.top) };
+    } else {
+      startFiring();
+    }
+  }
+  function fireMove(e){
+    if(!editMode || !fireDrag) return;
+    const p = pointFromEvent(e);
+    const dx = p.x - fireDrag.x, dy = p.y - fireDrag.y;
+    const pos = clampPos(fireBtn, fireDrag.left + dx, fireDrag.top + dy);
+    fireBtn.style.left = pos.left + 'px';
+    fireBtn.style.top = pos.top + 'px';
+    if(e.cancelable) e.preventDefault();
+  }
+  function fireUp(e){
+    if(e && e.cancelable) e.preventDefault();
+    if(editMode){ fireDrag = null; return; }
+    stopFiring();
+  }
+  fireBtn.addEventListener('touchstart', fireDown, { passive:false });
+  fireBtn.addEventListener('touchmove', fireMove, { passive:false });
+  fireBtn.addEventListener('touchend', fireUp, { passive:false });
+  fireBtn.addEventListener('mousedown', fireDown);
+  window.addEventListener('mousemove', fireMove);
+  window.addEventListener('mouseup', fireUp);
+
+  // Weapon switch buttons (1 = pistol, 2 = sniper, 3 = SMG) — usable via tap, or drag in edit mode
+  document.querySelectorAll('.weapon-btn').forEach(btn=>{
+    enableDrag(btn, ()=> setActiveWeapon(btn.dataset.weapon));
+  });
+  document.addEventListener('keydown', (e)=>{
+    if(!running) return;
+    if(e.key === '1') setActiveWeapon('pistol');
+    if(e.key === '2') setActiveWeapon('sniper');
+    if(e.key === '3') setActiveWeapon('smg');
+  });
+
+  // Edit-layout toggle: lets the player drag any button to a comfier spot
+  const editLayoutBtn = document.getElementById('editLayoutBtn');
+  // Fire/scope button resizing (1-100 slider) — panel only shown while edit mode is active
+  const btnSizePanel = document.getElementById('btnSizePanel');
+  const fireSizeSlider = document.getElementById('fireSizeSlider');
+  const fireSizeVal = document.getElementById('fireSizeVal');
+  const scopeSizeSlider = document.getElementById('scopeSizeSlider');
+  const scopeSizeVal = document.getElementById('scopeSizeVal');
+
+  const FIRE_SIZE_MIN = 44, FIRE_SIZE_MAX = 160;   // px diameter range for the fire button
+  const SCOPE_SIZE_MIN = 32, SCOPE_SIZE_MAX = 120; // px diameter range for the scope button
+
+  function sliderToPx(v, min, max){ return min + (v-1)/99 * (max-min); }
+  function pxToSlider(px, min, max){ return Math.round(1 + (px-min)/(max-min) * 99); }
+
+  function applyFireSize(v){
+    const px = sliderToPx(v, FIRE_SIZE_MIN, FIRE_SIZE_MAX);
+    fireBtn.style.width = px + 'px';
+    fireBtn.style.height = px + 'px';
+    fireBtn.style.fontSize = Math.max(10, px*0.16) + 'px';
+    reclampAfterResize(fireBtn);
+  }
+  function applyScopeSize(v){
+    const px = sliderToPx(v, SCOPE_SIZE_MIN, SCOPE_SIZE_MAX);
+    scopeBtn.style.width = px + 'px';
+    scopeBtn.style.height = px + 'px';
+    scopeBtn.style.fontSize = Math.max(9, px*0.19) + 'px';
+    reclampAfterResize(scopeBtn);
+  }
+
+  // If the button was already pinned to a left/top position, keep it fully on-screen after resizing
+  function reclampAfterResize(el){
+    if(!el.style.left) return;
+    const pos = clampPos(el, parseFloat(el.style.left), parseFloat(el.style.top));
+    el.style.left = pos.left + 'px';
+    el.style.top = pos.top + 'px';
+  }
+
+  fireSizeSlider.addEventListener('input', ()=>{
+    fireSizeVal.textContent = fireSizeSlider.value;
+    applyFireSize(parseInt(fireSizeSlider.value, 10));
+  });
+  scopeSizeSlider.addEventListener('input', ()=>{
+    scopeSizeVal.textContent = scopeSizeSlider.value;
+    applyScopeSize(parseInt(scopeSizeSlider.value, 10));
+  });
+
+  // Read each button's actual current size back into its slider, so reopening
+  // edit mode shows the size you left it at instead of resetting the slider.
+  function syncSizeSliders(){
+    const fireW = fireBtn.getBoundingClientRect().width || 84;
+    const scopeW = scopeBtn.getBoundingClientRect().width || 58;
+    const fireV = Math.max(1, Math.min(100, pxToSlider(fireW, FIRE_SIZE_MIN, FIRE_SIZE_MAX)));
+    const scopeV = Math.max(1, Math.min(100, pxToSlider(scopeW, SCOPE_SIZE_MIN, SCOPE_SIZE_MAX)));
+    fireSizeSlider.value = fireV; fireSizeVal.textContent = fireV;
+    scopeSizeSlider.value = scopeV; scopeSizeVal.textContent = scopeV;
+  }
+
+  function setEditMode(v){
+    editMode = v;
+    editLayoutBtn.textContent = v ? 'SELESAI ATUR' : 'ATUR TOMBOL';
+    editLayoutBtn.classList.toggle('active', v);
+    [fireBtn, scopeBtn, ...document.querySelectorAll('.weapon-btn')].forEach(el=>{
+      el.classList.toggle('editing', v);
+    });
+    // Scope button is normally hidden unless the sniper is the active weapon — force it
+    // visible while editing so it can always be found and repositioned, no matter what's equipped.
+    if(v){
+      scopeBtn.style.display = 'flex';
+    } else {
+      scopeBtn.style.display = (currentWeapon === 'sniper' && running) ? 'flex' : 'none';
+    }
+    btnSizePanel.style.display = v ? 'block' : 'none';
+    if(v) syncSizeSliders();
+  }
+  editLayoutBtn.addEventListener('click', ()=> setEditMode(!editMode));
+
+  // Scope button — hold to aim through the sniper scope. While held, dragging
+  // rotates the camera (like aiming a joystick) instead of moving the button.
+  // The button only relocates when "ATUR TOMBOL" edit mode is switched on.
+  let scopeDrag = null;   // used only in edit mode (repositioning the button)
+  let scopeAimTouch = null; // used in normal play (dragging = look around)
+
+  function scopeDown(e){
+    if(e.cancelable) e.preventDefault();
+    const p = pointFromEvent(e);
+    if(editMode){
+      pinToLeftTop(scopeBtn);
+      scopeDrag = { x:p.x, y:p.y, left:parseFloat(scopeBtn.style.left), top:parseFloat(scopeBtn.style.top) };
+    } else {
+      scopeAimTouch = { x:p.x, y:p.y };
+      enterScope();
+    }
+  }
+  function scopeMove(e){
+    const p = pointFromEvent(e);
+    if(editMode){
+      if(!scopeDrag) return;
+      const dx = p.x - scopeDrag.x, dy = p.y - scopeDrag.y;
+      const pos = clampPos(scopeBtn, scopeDrag.left + dx, scopeDrag.top + dy);
+      scopeBtn.style.left = pos.left + 'px';
+      scopeBtn.style.top = pos.top + 'px';
+    } else {
+      if(!scopeAimTouch || !running || paused) return;
+      const dx = p.x - scopeAimTouch.x, dy = p.y - scopeAimTouch.y;
+      scopeAimTouch.x = p.x; scopeAimTouch.y = p.y;
+      const s = touchSensitivity * (scoped ? 0.35 : 1);
+      yaw   -= dx * s;
+      pitch -= dy * s;
+      applyLook();
+    }
+    if(e.cancelable) e.preventDefault();
+  }
+  function scopeUp(e){
+    if(e && e.cancelable) e.preventDefault();
+    if(editMode){ scopeDrag = null; return; }
+    scopeAimTouch = null;
+    exitScope();
+  }
+  scopeBtn.addEventListener('touchstart', scopeDown, { passive:false });
+  scopeBtn.addEventListener('touchmove', scopeMove, { passive:false });
+  scopeBtn.addEventListener('touchend', scopeUp, { passive:false });
+  scopeBtn.addEventListener('mousedown', scopeDown);
+  window.addEventListener('mousemove', scopeMove);
+  window.addEventListener('mouseup', scopeUp);
+
+  // ---------- Pointer lock lifecycle ----------
+  const startOverlay = document.getElementById('startOverlay');
+  const pauseOverlay = document.getElementById('pauseOverlay');
+  const endOverlay = document.getElementById('endOverlay');
+  const resumeBtn = document.getElementById('resumeBtn');
+  const restartBtn = document.getElementById('restartBtn');
+
+  function requestLock(){
+    if(isTouchDevice) return; // touch devices never use pointer lock — avoids the pause overlay bug
+    try{
+      renderer.domElement.requestPointerLock();
+    }catch(err){ /* not supported on this device — touch/mouse-drag still works */ }
+  }
+
+  function beginRun(mode){
+    try{
+      gameMode = mode || gameMode;
+      resetGame();
+      running = true;
+      paused = false;
+      hud.style.display = 'flex';
+      crosshair.style.display = 'block';
+      fireBtn.style.display = 'flex';
+      weaponSwitch.style.display = 'flex';
+      editLayoutBtn.style.display = 'block';
+      finishBtn.style.display = (gameMode === 'free') ? 'block' : 'none';
+      gyroGearBtn.style.display = 'block';
+      requestLock();
+    }catch(err){
+      const banner = document.getElementById('errorBanner');
+      banner.style.display = 'block';
+      banner.textContent = 'Gagal memulai game: ' + err.message + '. Coba muat ulang halaman.';
+    }
+  }
+
+  const startBtnTimed = document.getElementById('startBtnTimed');
+  const startBtnFree = document.getElementById('startBtnFree');
+  const changeModeBtn = document.getElementById('changeModeBtn');
+  const finishBtn = document.getElementById('finishBtn');
+
+  // ---------- Force landscape: best-effort API lock + gameplay pause fallback ----------
+  let wrongOrientation = false;
+  function checkOrientation(){
+    wrongOrientation = window.matchMedia('(orientation: portrait)').matches;
+  }
+  window.addEventListener('resize', checkOrientation);
+  window.addEventListener('orientationchange', checkOrientation);
+  checkOrientation();
+
+  function tryLockLandscape(){
+    try{
+      const el = document.documentElement;
+      const doLock = ()=>{
+        if(screen.orientation && screen.orientation.lock){
+          screen.orientation.lock('landscape').catch(()=>{ /* not supported/allowed — CSS overlay still enforces it */ });
+        }
+      };
+      if(el.requestFullscreen){
+        el.requestFullscreen().then(doLock).catch(doLock);
+      } else {
+        doLock();
+      }
+    }catch(err){ /* unsupported — CSS overlay is the fallback */ }
+  }
+
+  startBtnTimed.addEventListener('click', ()=>{
+    ensureAudio();
+    tryLockLandscape();
+    startOverlay.style.display = 'none';
+    beginRun('timed');
+  });
+
+  startBtnFree.addEventListener('click', ()=>{
+    ensureAudio();
+    tryLockLandscape();
+    startOverlay.style.display = 'none';
+    beginRun('free');
+  });
+
+  finishBtn.addEventListener('click', ()=>{
+    if(running) endGame();
+  });
+  finishBtn.addEventListener('touchstart', (e)=>{
+    e.preventDefault();
+    e.stopPropagation();
+    if(running) endGame();
+  }, { passive:false });
+
+  resumeBtn.addEventListener('click', ()=>{
+    ensureAudio();
+    pauseOverlay.style.display = 'none';
+    requestLock();
+  });
+
+  restartBtn.addEventListener('click', ()=>{
+    ensureAudio();
+    endOverlay.style.display = 'none';
+    beginRun(gameMode);
+  });
+
+  changeModeBtn.addEventListener('click', ()=>{
+    endOverlay.style.display = 'none';
+    startOverlay.style.display = 'flex';
+  });
+
+  document.addEventListener('pointerlockchange', ()=>{
+    if(isTouchDevice) return; // touch devices don't use pointer lock at all
+    if(document.pointerLockElement === renderer.domElement){
+      paused = false;
+      pauseOverlay.style.display = 'none';
+    } else {
+      if(running && gyroModal.style.display !== 'flex'){
+        paused = true;
+        pauseOverlay.style.display = 'flex';
+      }
+    }
+  });
+  document.addEventListener('pointerlockerror', ()=>{ /* ignore — fall back to touch/drag */ });
+
+  // Instructions cover both input methods, since device detection can be unreliable
+  document.getElementById('startInstructions').innerHTML =
+    'Latih akurasi dan kecepatan tembakmu. Target akan muncul secara acak dan ' +
+    '<b>semakin cepat</b> seiring waktu berjalan. <b>Gerakkan mouse</b> atau ' +
+    '<b>geser jari di layar</b> untuk membidik, lalu klik / ketuk tombol ' +
+    '<b>TEMBAK</b> (atau klik kiri mouse) untuk menembak.';
+
+  function resetGame(){
+    targets.slice().forEach(removeTarget);
+    clearKillEffects();
+    score=0; hits=0; shots=0; streak=0; bestStreak=0;
+    timeLeft = GAME_DURATION; elapsed = 0; lastSpawn = 0;
+    yaw=0; pitch=0; viewKick=0;
+    camera.quaternion.identity();
+    exitScope();
+    stopFiring();
+    setActiveWeapon('pistol');
+    updateDifficulty(0);
+    updateHUD();
+    // seed a few targets
+    for(let i=0;i<3;i++) spawnTarget();
+  }
+
+  function endGame(){
+    running = false;
+    stopFiring();
+    hud.style.display = 'none';
+    crosshair.style.display = 'none';
+    fireBtn.style.display = 'none';
+    weaponSwitch.style.display = 'none';
+    scopeBtn.style.display = 'none';
+    editLayoutBtn.style.display = 'none';
+    finishBtn.style.display = 'none';
+    gyroGearBtn.style.display = 'none';
+    setEditMode(false);
+    exitScope();
+    targets.slice().forEach(removeTarget);
+    clearKillEffects();
+    if(document.pointerLockElement) document.exitPointerLock();
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalHits').textContent = hits;
+    document.getElementById('finalShots').textContent = shots;
+    document.getElementById('finalAcc').textContent = (shots>0?Math.round((hits/shots)*100):0)+'%';
+    document.getElementById('finalStreak').textContent = bestStreak;
+    endOverlay.style.display = 'flex';
+  }
+
+  // ---------- Main loop ----------
+  let lastFrame = performance.now();
+  function animate(now){
+    requestAnimationFrame(animate);
+    const dt = Math.min((now - lastFrame)/1000, 0.05);
+    lastFrame = now;
+
+    if(running && !paused && !wrongOrientation){
+      elapsed += dt;
+      updateDifficulty(elapsed);
+
+      let timeUp = false;
+      if(gameMode === 'timed'){
+        timeLeft -= dt;
+        if(timeLeft <= 0){ timeLeft = 0; timeUp = true; }
+      }
+
+      if(timeUp){
+        updateHUD();
+        endGame();
+      } else {
+        // spawn logic
+        if(now - lastSpawn > spawnInterval && targets.length < 6){
+          spawnTarget();
+          lastSpawn = now;
+        }
+        // update targets: drift only — targets no longer vanish on a timer, only on kill (hp <= 0)
+        for(const t of targets.slice()){
+          t.group.position.addScaledVector(t.driftDir, t.driftSpeed*dt);
+          t.group.rotation.y += dt*0.6; // slow spin so the character reads as 3D, not flat
+          // bounce softly within bounds
+          if(Math.abs(t.group.position.x) > 9) t.driftDir.x *= -1;
+          if(Math.abs(t.group.position.y) > 5) t.driftDir.y *= -1;
+        }
+        updateHUD();
+      }
+    }
+
+    if(running) updateTargetHpBars();
+    updateDyingTargets(dt);
+    updateSparkBursts(dt);
+
+    // full-auto fire ticking (SMG) — keeps firing at its fire-rate while the trigger is held
+    if(firing && running && !paused){
+      const w = weapons[currentWeapon];
+      if(w && w.auto){
+        autoFireAccum += dt*1000;
+        while(autoFireAccum >= w.fireRate){
+          autoFireAccum -= w.fireRate;
+          shoot();
+        }
+      } else {
+        firing = false;
+      }
+    }
+
+    // weapon recoil recovery (for both weapons, only the visible one matters on screen)
+    ['pistol','sniper','smg'].forEach(name=>{
+      const w = weapons[name];
+      if(w.recoil > 0){
+        w.recoil = Math.max(0, w.recoil - dt*8);
+        w.group.position.z = w.basePos.z + w.recoil*w.recoilKick;
+        w.group.rotation.x = -w.recoil*0.14;
+      } else {
+        w.group.position.z = w.basePos.z;
+        w.group.rotation.x = 0;
+      }
+    });
+
+    // camera view-kick recovery (subtle upward nudge that settles back down)
+    if(viewKick > 0){
+      viewKick = Math.max(0, viewKick - dt*0.08);
+      applyLook();
+    }
+
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>
