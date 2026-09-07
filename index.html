@@ -157,7 +157,7 @@
     border-color:var(--accent); color:var(--accent);
     box-shadow:0 0 10px rgba(57,255,136,0.3);
   }
-  .weapon-btn.editing, #fireBtn.editing, #scopeBtn.editing{
+  .weapon-btn.editing, #fireBtn.editing, #scopeBtn.editing, #inspectBtn.editing{
     outline:2px dashed #ffd23f; outline-offset:4px;
   }
 
@@ -220,6 +220,19 @@
     -webkit-tap-highlight-color:transparent; user-select:none; touch-action:manipulation;
   }
   #scopeBtn:active{ transform:scale(0.92); }
+
+  /* Inspect button (touch) — plays the weapon-inspect animation for whichever gun is equipped */
+  #inspectBtn{
+    position:fixed; right:128px; bottom:120px; width:52px; height:52px;
+    border-radius:50%; z-index:8; display:none;
+    background:radial-gradient(circle at 35% 30%, #c58fff, #7a2fd1);
+    border:3px solid rgba(255,255,255,0.35);
+    box-shadow:0 4px 16px rgba(150,80,220,0.45);
+    color:#fff; font-weight:800; font-size:9px; letter-spacing:0.3px;
+    align-items:center; justify-content:center; text-align:center;
+    -webkit-tap-highlight-color:transparent; user-select:none; touch-action:manipulation;
+  }
+  #inspectBtn:active, #inspectBtn.active{ transform:scale(0.92); filter:brightness(1.15); }
 
   /* Sniper scope overlay — thick ring lens with duplex crosshair + BDC ladder */
   #scopeOverlay{
@@ -327,6 +340,24 @@
     border-radius:10px; font-size:13px; line-height:1.5; display:none;
   }
 
+  /* FPS meter — small corner readout + a bar showing load relative to the 120fps cap */
+  #fpsMeter{
+    position:fixed; right:12px; bottom:12px; z-index:12;
+    background:var(--panel); border:1px solid rgba(255,255,255,0.18);
+    border-radius:8px; padding:6px 10px; font-size:11px; color:#cfe0ee;
+    font-variant-numeric: tabular-nums; letter-spacing:0.4px;
+    pointer-events:none; min-width:78px;
+  }
+  #fpsMeter .fps-num{ font-size:14px; font-weight:700; }
+  #fpsMeter .fps-track{
+    margin-top:4px; width:100%; height:4px; border-radius:2px;
+    background:rgba(255,255,255,0.12); overflow:hidden;
+  }
+  #fpsMeter .fps-fill{
+    height:100%; width:100%; border-radius:2px;
+    background:#39ff88; transition:width 0.25s linear, background-color 0.25s linear;
+  }
+
   /* Notebook-style guide panel */
   #guideModal .panel{
     max-width:440px; text-align:left;
@@ -368,6 +399,11 @@
 <div id="targetHpLayer"></div>
 <div id="damageNumberLayer"></div>
 
+<div id="fpsMeter">
+  <span class="fps-num" id="fpsNum">--</span> FPS
+  <div class="fps-track"><div class="fps-fill" id="fpsFill"></div></div>
+</div>
+
 <div id="hud" class="hidden" style="display:none;">
   <div class="hud-box" id="scoreBox">
     <div class="hud-label">Skor</div>
@@ -389,6 +425,7 @@
 </div>
 <div id="fireBtn">TEMBAK</div>
 <div id="scopeBtn">SCOPE</div>
+<div id="inspectBtn">INSPEKSI</div>
 <div id="weaponSwitch">
   <div class="weapon-btn active" data-weapon="pistol">1 · PISTOL</div>
   <div class="weapon-btn" data-weapon="sniper">2 · SNIPER</div>
@@ -404,6 +441,10 @@
   <div class="bsp-row">
     <label>Ukuran Tombol Scope: <span id="scopeSizeVal">30</span> / 100</label>
     <input type="range" id="scopeSizeSlider" min="1" max="100" step="1" value="30">
+  </div>
+  <div class="bsp-row">
+    <label>Ukuran Tombol Inspeksi: <span id="inspectSizeVal">28</span> / 100</label>
+    <input type="range" id="inspectSizeSlider" min="1" max="100" step="1" value="28">
   </div>
 </div>
 <div id="finishBtn">SELESAI</div>
@@ -487,12 +528,14 @@
         <li>Tahan/klik <b>klik kiri</b> untuk menembak (senjata full-auto akan menembak beruntun selama ditahan).</li>
         <li>Tekan tombol <b>1 / 2 / 3</b> untuk ganti senjata: Pistol, Sniper, SMG.</li>
         <li>Tahan tombol <b>Spasi</b> atau <b>W</b> untuk mengintip lewat scope sniper.</li>
+        <li>Tekan tombol <b>V</b> untuk memainkan animasi inspeksi senjata yang sedang dipegang.</li>
       </ul>
       <h3>👆 Kontrol Sentuh (HP/Tablet)</h3>
       <ul>
         <li>Geser jari di layar untuk membidik.</li>
         <li>Ketuk atau tahan tombol <b>TEMBAK</b> untuk menembak.</li>
         <li>Tahan tombol <b>SCOPE</b> untuk mengintip lewat sniper.</li>
+        <li>Ketuk tombol <b>INSPEKSI</b> untuk memutar/menampilkan senjata yang sedang dipegang.</li>
         <li>Gunakan tombol <b>ATUR TOMBOL</b> untuk memindah/mengubah ukuran tombol di layar.</li>
       </ul>
       <h3>⚙ Pengaturan</h3>
@@ -599,11 +642,16 @@ window.addEventListener('error', function(e){
     return;
   }
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  // Cap pixel ratio lower on touch/mobile hardware — rendering at full native pixel density
+  // on phones is one of the biggest hidden GPU costs and a common cause of stutter.
+  const isLikelyMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isLikelyMobile ? 1.5 : 2));
   // HD visual upgrade: soft real-time shadows + filmic tone mapping/sRGB output for
-  // richer contrast and color, without touching gameplay logic or adding new assets.
+  // richer contrast and color — tuned down from the initial version (smaller shadow map,
+  // cheaper shadow filtering) since soft high-res shadows were a major source of stutter,
+  // especially on mobile GPUs.
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -620,7 +668,7 @@ window.addEventListener('error', function(e){
   const sun = new THREE.DirectionalLight(0xfff2cf, 1.3);
   sun.position.set(-6, 10, 4);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 40;
   sun.shadow.camera.left = -20;
@@ -754,9 +802,11 @@ window.addEventListener('error', function(e){
     const basePos = new THREE.Vector3(0.32,-0.32,-0.55);
     group.position.copy(basePos);
     group.rotation.y = -0.05;
+    const baseRot = group.rotation.clone();
     camera.add(group);
 
-    weapons.pistol = { group, basePos, muzzleFlash, recoil:0, recoilKick:0.06, viewKick:0.012, hasScope:false, auto:false, fireRate:260, headDamage:28, bodyDamage:26 };
+    weapons.pistol = { group, basePos, baseRot, muzzleFlash, recoil:0, recoilKick:0.06, viewKick:0.012, hasScope:false, auto:false, fireRate:260, headDamage:28, bodyDamage:26,
+      inspectDuration:1.3, inspectPos:new THREE.Vector3(-0.05,0.06,0.14), inspectYaw:0.6, inspectPitch:0.24, inspectRoll:0.14 };
   })();
 
   // --- Sniper rifle ---
@@ -801,10 +851,12 @@ window.addEventListener('error', function(e){
     const basePos = new THREE.Vector3(0.3,-0.34,-0.35);
     group.position.copy(basePos);
     group.rotation.y = -0.04;
+    const baseRot = group.rotation.clone();
     group.visible = false;
     camera.add(group);
 
-    weapons.sniper = { group, basePos, muzzleFlash, recoil:0, recoilKick:0.11, viewKick:0.022, hasScope:true, auto:false, fireRate:900, headDamage:110, bodyDamage:70 };
+    weapons.sniper = { group, basePos, baseRot, muzzleFlash, recoil:0, recoilKick:0.11, viewKick:0.022, hasScope:true, auto:false, fireRate:900, headDamage:110, bodyDamage:70,
+      inspectDuration:1.7, inspectPos:new THREE.Vector3(-0.08,0.08,0.2), inspectYaw:0.45, inspectPitch:0.18, inspectRoll:0.18 };
   })();
 
   // --- SMG (UMP) — compact, full-auto submachine gun ---
@@ -853,14 +905,70 @@ window.addEventListener('error', function(e){
     const basePos = new THREE.Vector3(0.3,-0.33,-0.5);
     group.position.copy(basePos);
     group.rotation.y = -0.05;
+    const baseRot = group.rotation.clone();
     group.visible = false;
     camera.add(group);
 
-    weapons.smg = { group, basePos, muzzleFlash, recoil:0, recoilKick:0.045, viewKick:0.007, hasScope:false, auto:true, fireRate:95, headDamage:32, bodyDamage:28 };
+    weapons.smg = { group, basePos, baseRot, muzzleFlash, recoil:0, recoilKick:0.045, viewKick:0.007, hasScope:false, auto:true, fireRate:95, headDamage:32, bodyDamage:28,
+      inspectDuration:1.15, inspectPos:new THREE.Vector3(-0.06,0.07,0.12), inspectYaw:0.65, inspectPitch:0.28, inspectRoll:0.22 };
   })();
 
   let currentWeapon = 'pistol';
   let scoped = false;
+
+  // ---------- Weapon inspect animation ----------
+  // Plays a self-contained turn-and-return motion on whichever weapon is currently
+  // equipped. Driven by sin() curves so the animation always starts and ends exactly
+  // at the weapon's basePos/baseRot with no manual reset math needed mid-flight.
+  let inspecting = false;
+  let inspectT = 0;
+  let inspectingWeapon = null;
+
+  function cancelInspect(){
+    if(!inspecting) return;
+    const w = weapons[inspectingWeapon];
+    if(w){
+      w.group.position.copy(w.basePos);
+      w.group.rotation.copy(w.baseRot);
+    }
+    inspecting = false;
+    inspectT = 0;
+    inspectingWeapon = null;
+    inspectBtn.classList.remove('active');
+  }
+
+  function triggerInspect(){
+    if(!running || paused || scoped || firing || inspecting) return;
+    if(!weapons[currentWeapon]) return;
+    inspecting = true;
+    inspectT = 0;
+    inspectingWeapon = currentWeapon;
+    inspectBtn.classList.add('active');
+  }
+
+  function updateInspect(dt){
+    if(!inspecting) return;
+    const w = weapons[inspectingWeapon];
+    if(!w || inspectingWeapon !== currentWeapon){ cancelInspect(); return; }
+    inspectT += dt;
+    const dur = w.inspectDuration || 1.4;
+    const p = Math.min(inspectT / dur, 1);
+    const lift = Math.sin(p * Math.PI);       // 0 -> 1 -> 0: raises the weapon then settles it back
+    const turn = Math.sin(p * Math.PI * 2);   // 0 -> 1 -> 0 -> -1 -> 0: shows both sides, ends at zero
+    w.group.position.copy(w.basePos).addScaledVector(w.inspectPos, lift);
+    w.group.rotation.set(
+      w.baseRot.x + turn * w.inspectPitch,
+      w.baseRot.y + turn * w.inspectYaw,
+      w.baseRot.z + turn * w.inspectRoll
+    );
+    if(p >= 1){
+      w.group.position.copy(w.basePos);
+      w.group.rotation.copy(w.baseRot);
+      inspecting = false;
+      inspectingWeapon = null;
+      inspectBtn.classList.remove('active');
+    }
+  }
 
   function triggerRecoil(){
     const w = weapons[currentWeapon];
@@ -886,6 +994,7 @@ window.addEventListener('error', function(e){
   function enterScope(){
     if(weapons[currentWeapon] && !weapons[currentWeapon].hasScope) return;
     if(!running || paused || scoped) return;
+    cancelInspect();
     scoped = true;
     camera.fov = SCOPE_FOV;
     camera.updateProjectionMatrix();
@@ -898,6 +1007,7 @@ window.addEventListener('error', function(e){
     if(!weapons[name] || currentWeapon === name) return;
     exitScope();
     stopFiring();
+    cancelInspect();
     currentWeapon = name;
     weapons.pistol.group.visible = (name === 'pistol');
     weapons.sniper.group.visible = (name === 'sniper');
@@ -916,6 +1026,7 @@ window.addEventListener('error', function(e){
     if(!running || paused) return;
     const w = weapons[currentWeapon];
     if(!w) return;
+    cancelInspect();
     shoot();
     if(w.auto){
       firing = true;
@@ -1606,6 +1717,7 @@ window.addEventListener('error', function(e){
   const damageNumberLayer = document.getElementById('damageNumberLayer');
   const scopeOverlay = document.getElementById('scopeOverlay');
   const scopeBtn = document.getElementById('scopeBtn');
+  const inspectBtn = document.getElementById('inspectBtn');
   const weaponSwitch = document.getElementById('weaponSwitch');
 
   function updateHUD(){
@@ -1786,11 +1898,14 @@ window.addEventListener('error', function(e){
   document.querySelectorAll('.weapon-btn').forEach(btn=>{
     enableDrag(btn, ()=> setActiveWeapon(btn.dataset.weapon));
   });
+  // Inspect button — same generic tap/drag handler as the weapon buttons
+  enableDrag(inspectBtn, triggerInspect);
   document.addEventListener('keydown', (e)=>{
     if(!running || paused) return;
     if(e.key === '1') setActiveWeapon('pistol');
     if(e.key === '2') setActiveWeapon('sniper');
     if(e.key === '3') setActiveWeapon('smg');
+    if(e.key === 'v' || e.key === 'V') triggerInspect();
     if(e.code === 'Space') e.preventDefault(); // stop the page from scrolling on spacebar
     if(e.code === 'KeyW' || e.code === 'Space'){
       // Only trigger enterScope() on the key's first press (not on OS auto-repeat), and
@@ -1824,9 +1939,12 @@ window.addEventListener('error', function(e){
   const fireSizeVal = document.getElementById('fireSizeVal');
   const scopeSizeSlider = document.getElementById('scopeSizeSlider');
   const scopeSizeVal = document.getElementById('scopeSizeVal');
+  const inspectSizeSlider = document.getElementById('inspectSizeSlider');
+  const inspectSizeVal = document.getElementById('inspectSizeVal');
 
-  const FIRE_SIZE_MIN = 44, FIRE_SIZE_MAX = 160;   // px diameter range for the fire button
-  const SCOPE_SIZE_MIN = 32, SCOPE_SIZE_MAX = 120; // px diameter range for the scope button
+  const FIRE_SIZE_MIN = 44, FIRE_SIZE_MAX = 160;       // px diameter range for the fire button
+  const SCOPE_SIZE_MIN = 32, SCOPE_SIZE_MAX = 120;     // px diameter range for the scope button
+  const INSPECT_SIZE_MIN = 32, INSPECT_SIZE_MAX = 110; // px diameter range for the inspect button
 
   function sliderToPx(v, min, max){ return min + (v-1)/99 * (max-min); }
   function pxToSlider(px, min, max){ return Math.round(1 + (px-min)/(max-min) * 99); }
@@ -1845,6 +1963,13 @@ window.addEventListener('error', function(e){
     scopeBtn.style.fontSize = Math.max(9, px*0.19) + 'px';
     reclampAfterResize(scopeBtn);
   }
+  function applyInspectSize(v){
+    const px = sliderToPx(v, INSPECT_SIZE_MIN, INSPECT_SIZE_MAX);
+    inspectBtn.style.width = px + 'px';
+    inspectBtn.style.height = px + 'px';
+    inspectBtn.style.fontSize = Math.max(7, px*0.17) + 'px';
+    reclampAfterResize(inspectBtn);
+  }
 
   // If the button was already pinned to a left/top position, keep it fully on-screen after resizing
   function reclampAfterResize(el){
@@ -1862,23 +1987,30 @@ window.addEventListener('error', function(e){
     scopeSizeVal.textContent = scopeSizeSlider.value;
     applyScopeSize(parseInt(scopeSizeSlider.value, 10));
   });
+  inspectSizeSlider.addEventListener('input', ()=>{
+    inspectSizeVal.textContent = inspectSizeSlider.value;
+    applyInspectSize(parseInt(inspectSizeSlider.value, 10));
+  });
 
   // Read each button's actual current size back into its slider, so reopening
   // edit mode shows the size you left it at instead of resetting the slider.
   function syncSizeSliders(){
     const fireW = fireBtn.getBoundingClientRect().width || 84;
     const scopeW = scopeBtn.getBoundingClientRect().width || 58;
+    const inspectW = inspectBtn.getBoundingClientRect().width || 52;
     const fireV = Math.max(1, Math.min(100, pxToSlider(fireW, FIRE_SIZE_MIN, FIRE_SIZE_MAX)));
     const scopeV = Math.max(1, Math.min(100, pxToSlider(scopeW, SCOPE_SIZE_MIN, SCOPE_SIZE_MAX)));
+    const inspectV = Math.max(1, Math.min(100, pxToSlider(inspectW, INSPECT_SIZE_MIN, INSPECT_SIZE_MAX)));
     fireSizeSlider.value = fireV; fireSizeVal.textContent = fireV;
     scopeSizeSlider.value = scopeV; scopeSizeVal.textContent = scopeV;
+    inspectSizeSlider.value = inspectV; inspectSizeVal.textContent = inspectV;
   }
 
   function setEditMode(v){
     editMode = v;
     editLayoutBtn.textContent = v ? 'SELESAI ATUR' : 'ATUR TOMBOL';
     editLayoutBtn.classList.toggle('active', v);
-    [fireBtn, scopeBtn, ...document.querySelectorAll('.weapon-btn')].forEach(el=>{
+    [fireBtn, scopeBtn, inspectBtn, ...document.querySelectorAll('.weapon-btn')].forEach(el=>{
       el.classList.toggle('editing', v);
     });
     // Scope button is normally hidden unless the sniper is the active weapon — force it
@@ -1988,6 +2120,7 @@ window.addEventListener('error', function(e){
       crosshair.style.display = 'block';
       fireBtn.style.display = 'flex';
       weaponSwitch.style.display = 'flex';
+      inspectBtn.style.display = 'flex';
       editLayoutBtn.style.display = 'block';
       finishBtn.style.display = (gameMode === 'free') ? 'block' : 'none';
       gyroGearBtn.style.display = 'block';
@@ -2109,6 +2242,7 @@ window.addEventListener('error', function(e){
     camera.quaternion.identity();
     exitScope();
     stopFiring();
+    cancelInspect();
     setActiveWeapon('pistol');
     updateDifficulty(0);
     updateHUD();
@@ -2119,11 +2253,13 @@ window.addEventListener('error', function(e){
   function endGame(){
     running = false;
     stopFiring();
+    cancelInspect();
     hud.style.display = 'none';
     crosshair.style.display = 'none';
     fireBtn.style.display = 'none';
     weaponSwitch.style.display = 'none';
     scopeBtn.style.display = 'none';
+    inspectBtn.style.display = 'none';
     editLayoutBtn.style.display = 'none';
     finishBtn.style.display = 'none';
     gyroGearBtn.style.display = 'none';
@@ -2141,10 +2277,45 @@ window.addEventListener('error', function(e){
   }
 
   // ---------- Main loop ----------
+  // Cap rendering at 120fps: on high-refresh displays (144Hz/165Hz+) requestAnimationFrame
+  // fires faster than the game needs, which wastes GPU/battery and can itself cause
+  // inconsistent frame pacing (stutter). Frames beyond the cap are skipped entirely —
+  // logic and rendering only run when enough real time has actually passed.
+  const MAX_FPS = 120;
+  const MIN_FRAME_MS = 1000 / MAX_FPS;
+  let lastRenderTime = performance.now();
   let lastFrame = performance.now();
+
+  // FPS meter: averaged over a short rolling window and refreshed a few times a second,
+  // so the readout is stable/readable instead of jumping every single frame.
+  const fpsNumEl = document.getElementById('fpsNum');
+  const fpsFillEl = document.getElementById('fpsFill');
+  let fpsFrameCount = 0;
+  let fpsAccumMs = 0;
+  function updateFpsMeter(frameMs){
+    fpsFrameCount++;
+    fpsAccumMs += frameMs;
+    if(fpsAccumMs >= 400){ // refresh the readout ~2.5x/sec
+      const fps = Math.round((fpsFrameCount * 1000) / fpsAccumMs);
+      fpsNumEl.textContent = fps;
+      const pct = Math.max(4, Math.min(100, (fps / MAX_FPS) * 100));
+      fpsFillEl.style.width = pct + '%';
+      fpsFillEl.style.background = fps >= 100 ? '#39ff88' : (fps >= 50 ? '#ffd23f' : '#ff4d4d');
+      fpsFrameCount = 0;
+      fpsAccumMs = 0;
+    }
+  }
+
   function animate(now){
     requestAnimationFrame(animate);
+
+    // Skip this rAF tick entirely if we're being called faster than the 120fps cap allows.
+    const sinceRender = now - lastRenderTime;
+    if(sinceRender < MIN_FRAME_MS) return;
+    lastRenderTime = now - (sinceRender % MIN_FRAME_MS); // subtract drift instead of resetting to `now`
+
     const dt = Math.min((now - lastFrame)/1000, 0.05);
+    updateFpsMeter(now - lastFrame);
     lastFrame = now;
 
     if(running && !paused && !wrongOrientation){
@@ -2198,6 +2369,7 @@ window.addEventListener('error', function(e){
 
     // weapon recoil recovery (for both weapons, only the visible one matters on screen)
     ['pistol','sniper','smg'].forEach(name=>{
+      if(inspecting && name === inspectingWeapon) return; // inspect animation owns this weapon's transform right now
       const w = weapons[name];
       if(w.recoil > 0){
         w.recoil = Math.max(0, w.recoil - dt*8);
@@ -2208,6 +2380,10 @@ window.addEventListener('error', function(e){
         w.group.rotation.x = 0;
       }
     });
+
+    // weapon inspect animation tick — runs after recoil recovery so its position/rotation
+    // isn't immediately overwritten; freezes cleanly whenever the round is paused
+    if(running && !paused) updateInspect(dt);
 
     // camera view-kick recovery (subtle upward nudge that settles back down)
     if(viewKick > 0){
