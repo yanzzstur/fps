@@ -1054,7 +1054,8 @@ window.addEventListener('error', function(e){
   }
 
   function onMouseMove(e){
-    if(document.pointerLockElement !== renderer.domElement) return;
+    const pointerLocked = document.pointerLockElement === renderer.domElement;
+    if(!pointerLocked && !dragLooking) return;
     const s = mouseSensitivity * (scoped ? 0.3 : 1);
     yaw   -= e.movementX * s;
     pitch -= e.movementY * s;
@@ -1062,13 +1063,31 @@ window.addEventListener('error', function(e){
   }
   document.addEventListener('mousemove', onMouseMove);
 
-  // Right mouse button: hold to look through the sniper scope (desktop)
+  // Left OR right mouse button: hold and drag to look around (desktop). Pointer lock is
+  // engaged only while a button is held — this hides/locks the OS cursor in place for the
+  // duration of the drag (so it can't wander off or get stuck at the screen edge),
+  // and is released the moment that same button comes up.
+  let dragLooking = false;
+  let dragButton = -1; // which button started the drag, so mouseup only ends it for that button
+  let intentionalUnlock = false;
   renderer.domElement.addEventListener('contextmenu', (e)=> e.preventDefault());
   renderer.domElement.addEventListener('mousedown', (e)=>{
-    if(e.button === 2) enterScope();
+    if((e.button === 0 || e.button === 2) && running && !isTouchDevice){
+      e.preventDefault();
+      dragLooking = true;
+      dragButton = e.button;
+      if(document.pointerLockElement !== renderer.domElement) requestLock();
+    }
   });
   window.addEventListener('mouseup', (e)=>{
-    if(e.button === 2) exitScope();
+    if(e.button === dragButton){
+      dragLooking = false;
+      dragButton = -1;
+      if(document.pointerLockElement === renderer.domElement){
+        intentionalUnlock = true;
+        document.exitPointerLock();
+      }
+    }
   });
 
   // Touch: drag anywhere on the canvas to look around, tap the fire button to shoot
@@ -1231,10 +1250,7 @@ window.addEventListener('error', function(e){
     gyroModal.style.display = 'none';
     if(modalPausedGame){
       modalPausedGame = false;
-      if(running){
-        if(isTouchDevice) paused = false;
-        else requestLock(); // pointerlockchange will clear `paused` once the lock re-acquires
-      }
+      if(running) paused = false;
     }
   }
 
@@ -1454,19 +1470,6 @@ window.addEventListener('error', function(e){
     updateHUD();
   }
 
-  renderer.domElement.addEventListener('mousedown', (e)=>{
-    if(!running || isTouchDevice || e.button === 2) return; // right button reserved for scope
-    if(document.pointerLockElement !== renderer.domElement){
-      requestLock();
-      return;
-    }
-    startFiring();
-  });
-  window.addEventListener('mouseup', (e)=>{
-    if(e.button === 2) return;
-    stopFiring();
-  });
-
   // ---------- Draggable buttons: reposition freely, anytime ----------
   let editMode = false;
 
@@ -1497,8 +1500,9 @@ window.addEventListener('error', function(e){
   // Generic drag-to-reposition for buttons with a simple tap action (fire, weapon switch).
   // Only active while "ATUR TOMBOL" edit mode is on — otherwise the button behaves normally.
   function enableDrag(el, onTap){
-    let drag = null, moved = false;
+    let drag = null, moved = false, pressed = false;
     function down(e){
+      pressed = true;
       const p = pointFromEvent(e);
       moved = false;
       if(editMode){
@@ -1520,6 +1524,10 @@ window.addEventListener('error', function(e){
       if(e.cancelable) e.preventDefault();
     }
     function up(e){
+      // Ignore mouseup events that didn't originate from a mousedown on this element —
+      // window-level mouseup fires for every click on the page, not just this button's.
+      if(!pressed) return;
+      pressed = false;
       if(editMode){ drag = null; return; }
       if(!moved && onTap){
         if(e.cancelable) e.preventDefault();
@@ -1576,10 +1584,24 @@ window.addEventListener('error', function(e){
     enableDrag(btn, ()=> setActiveWeapon(btn.dataset.weapon));
   });
   document.addEventListener('keydown', (e)=>{
-    if(!running) return;
+    if(!running || paused) return;
     if(e.key === '1') setActiveWeapon('pistol');
     if(e.key === '2') setActiveWeapon('sniper');
     if(e.key === '3') setActiveWeapon('smg');
+    if(e.code === 'KeyW' && !e.repeat) enterScope();
+    if(e.code === 'Space'){
+      e.preventDefault(); // stop the page from scrolling on spacebar
+      if(!e.repeat) startFiring();
+    }
+  });
+  document.addEventListener('keyup', (e)=>{
+    if(e.code === 'KeyW') exitScope();
+    if(e.code === 'Space') stopFiring();
+  });
+  window.addEventListener('blur', ()=>{
+    stopFiring();
+    exitScope();
+    dragLooking = false;
   });
 
   // Edit-layout toggle: lets the player drag any button to a comfier spot
@@ -1735,7 +1757,8 @@ window.addEventListener('error', function(e){
       editLayoutBtn.style.display = 'block';
       finishBtn.style.display = (gameMode === 'free') ? 'block' : 'none';
       gyroGearBtn.style.display = 'block';
-      requestLock();
+      // Pointer lock is no longer engaged automatically here — it's now requested
+      // on-demand only while the player is actively left-click-dragging to look around.
     }catch(err){
       const banner = document.getElementById('errorBanner');
       banner.style.display = 'block';
@@ -1798,8 +1821,8 @@ window.addEventListener('error', function(e){
 
   resumeBtn.addEventListener('click', ()=>{
     ensureAudio();
+    paused = false;
     pauseOverlay.style.display = 'none';
-    requestLock();
   });
 
   restartBtn.addEventListener('click', ()=>{
@@ -1819,6 +1842,10 @@ window.addEventListener('error', function(e){
       paused = false;
       pauseOverlay.style.display = 'none';
     } else {
+      if(intentionalUnlock){
+        intentionalUnlock = false; // we released it ourselves (drag ended) — not a real pause
+        return;
+      }
       if(running && gyroModal.style.display !== 'flex'){
         paused = true;
         pauseOverlay.style.display = 'flex';
@@ -1830,7 +1857,7 @@ window.addEventListener('error', function(e){
   // Instructions cover both input methods, since device detection can be unreliable
   document.getElementById('startInstructions').innerHTML =
     'Latih akurasi dan kecepatan tembakmu. Target akan muncul secara acak dan ' +
-    '<b>semakin cepat</b> seiring waktu berjalan. <b>Gerakkan mouse</b> atau ' +
+    '<b>semakin cepat</b> seiring waktu berjalan. <b>Tahan klik kiri atau kanan mouse lalu geser</b> atau ' +
     '<b>geser jari di layar</b> untuk membidik, lalu klik / ketuk tombol ' +
     '<b>TEMBAK</b> (atau klik kiri mouse) untuk menembak.';
 
