@@ -432,7 +432,35 @@
 </div>
 <div id="errorBanner"></div>
 
-<div class="overlay" id="startOverlay">
+<div class="overlay" id="mainMenu">
+  <div class="panel">
+    <h1>🎯 FPS AIM TRAINER</h1>
+    <p>Latih akurasi dan kecepatan tembakmu di padang pasir.</p>
+    <div style="display:flex; flex-direction:column; gap:12px; margin-top:6px;">
+      <button class="btn" id="mainMenuStartBtn">▶ MULAI</button>
+      <button class="btn btn-secondary" id="mainMenuCreditBtn">🎬 KREDIT</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="creditsModal" style="display:none;">
+  <div class="panel">
+    <h1>🎬 Kredit</h1>
+    <div class="guide-page">
+      <h3>🎯 FPS Aim Trainer</h3>
+      <ul>
+        <li>Dikembangkan Dan Di Jaga Oleh <b>YanzzPhyrine / Fikri Alfarizi</b>.</li>
+        <li>Di Support Oleh <b>Zian Firzana</b> Dan <b>Claude AI</b>.</li>
+        <li>Telegram Developer: <b>@privbans</b>.</li>
+        <li>Latih Aim Mu Sampai Jago Agar Tidak Beban Tim.</li>
+        <li>Terinspirasi Dari <b>Blood Strike</b> Dan <b>Aim Champ</b>.</li>
+      </ul>
+    </div>
+    <button class="btn" id="closeCreditsBtn">KEMBALI</button>
+  </div>
+</div>
+
+<div class="overlay" id="startOverlay" style="display:none;">
   <div class="panel">
     <h1>🎯 FPS AIM TRAINER</h1>
     <p id="startInstructions">
@@ -443,6 +471,7 @@
       <button class="btn" id="startBtnTimed">MODE WAKTU · 60 DETIK</button>
       <button class="btn btn-secondary" id="startBtnFree">MODE BEBAS · TANPA WAKTU</button>
       <button class="btn btn-secondary" id="openGyroSettingsBtn">⚙ KONTROL &amp; SENSITIVITAS</button>
+      <button class="btn btn-secondary" id="backToMainMenuBtn">← MENU UTAMA</button>
     </div>
   </div>
 </div>
@@ -454,11 +483,10 @@
     <div class="guide-page">
       <h3>🖱 Kontrol Mouse (Komputer)</h3>
       <ul>
-        <li>Tahan <b>klik kiri atau klik kanan</b> lalu geser mouse untuk memutar arah bidikan. Kursor akan terkunci di tempat selama tombol ditahan.</li>
-        <li><b>Klik kiri</b> (saat tidak sedang menggeser) untuk menembak.</li>
+        <li>Tahan <b>klik kanan</b> lalu geser mouse untuk memutar arah bidikan. Kursor akan terkunci di tempat selama tombol ditahan.</li>
+        <li>Tahan/klik <b>klik kiri</b> untuk menembak (senjata full-auto akan menembak beruntun selama ditahan).</li>
         <li>Tekan tombol <b>1 / 2 / 3</b> untuk ganti senjata: Pistol, Sniper, SMG.</li>
-        <li>Tahan tombol <b>W</b> untuk mengintip lewat scope sniper.</li>
-        <li>Tekan <b>Spasi</b> untuk menembak beruntun (full-auto pada senjata yang mendukung).</li>
+        <li>Tahan tombol <b>Spasi</b> atau <b>W</b> untuk mengintip lewat scope sniper.</li>
       </ul>
       <h3>👆 Kontrol Sentuh (HP/Tablet)</h3>
       <ul>
@@ -572,6 +600,13 @@ window.addEventListener('error', function(e){
   }
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  // HD visual upgrade: soft real-time shadows + filmic tone mapping/sRGB output for
+  // richer contrast and color, without touching gameplay logic or adding new assets.
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
   document.body.appendChild(renderer.domElement);
 
   window.addEventListener('resize', ()=>{
@@ -584,6 +619,15 @@ window.addEventListener('error', function(e){
   scene.add(new THREE.AmbientLight(0xffe3b0, 0.95));
   const sun = new THREE.DirectionalLight(0xfff2cf, 1.3);
   sun.position.set(-6, 10, 4);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 40;
+  sun.shadow.camera.left = -20;
+  sun.shadow.camera.right = 20;
+  sun.shadow.camera.top = 20;
+  sun.shadow.camera.bottom = -20;
+  sun.shadow.bias = -0.0015;
   scene.add(sun);
   const fill = new THREE.PointLight(0xffb46b, 0.6, 40);
   fill.position.set(0, -2, 4);
@@ -595,6 +639,7 @@ window.addEventListener('error', function(e){
   const sandFloor = new THREE.Mesh(sandGeo, sandMat);
   sandFloor.rotation.x = -Math.PI/2;
   sandFloor.position.y = -4.02;
+  sandFloor.receiveShadow = true;
   scene.add(sandFloor);
 
   // Faint grid overlay for spatial reference, recolored to a dusty brown/tan
@@ -630,6 +675,8 @@ window.addEventListener('error', function(e){
     );
     rock.position.set(x, -4+s*0.5, z);
     rock.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+    rock.castShadow = true;
+    rock.receiveShadow = true;
     scene.add(rock);
   }
   addRock(-6, -9, 0.5, 0x8a7256);
@@ -639,17 +686,20 @@ window.addEventListener('error', function(e){
   function addCactus(x, z, scale){
     const group = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ color:0x4c7a4a, roughness:0.8 });
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.22,1.6,8), mat);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.22,1.6,12), mat);
     trunk.position.y = 0.8;
+    trunk.castShadow = true;
     group.add(trunk);
-    const armGeo = new THREE.CylinderGeometry(0.12,0.14,0.7,8);
+    const armGeo = new THREE.CylinderGeometry(0.12,0.14,0.7,12);
     const armL = new THREE.Mesh(armGeo, mat);
     armL.position.set(-0.28, 1.0, 0);
     armL.rotation.z = 0.5;
+    armL.castShadow = true;
     group.add(armL);
     const armR = new THREE.Mesh(armGeo, mat);
     armR.position.set(0.28, 1.0, 0);
     armR.rotation.z = -0.5;
+    armR.castShadow = true;
     group.add(armR);
     group.scale.setScalar(scale);
     group.position.set(x, -4, z);
@@ -820,7 +870,10 @@ window.addEventListener('error', function(e){
     setTimeout(()=>{ w.muzzleFlash.visible = false; }, 45);
   }
 
+  let scopeKeysHeld = new Set(); // tracks which scope keys (W, Space) are currently down,
+                                  // so releasing one doesn't cancel scope while the other is still held
   function exitScope(){
+    scopeKeysHeld.clear();
     if(!scoped) return;
     scoped = false;
     camera.fov = NORMAL_FOV;
@@ -895,31 +948,38 @@ window.addEventListener('error', function(e){
     const group = new THREE.Group();
     const { bodyMat, headMat } = makeCharacterMaterials();
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 16), headMat);
+    // Higher segment counts than before for smoother, less faceted silhouettes at close range.
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 24, 20), headMat);
     head.position.y = 1.55;
     head.userData.isHead = true;
+    head.castShadow = true;
     group.add(head);
 
-    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.28, 0.9, 12), bodyMat);
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.28, 0.9, 20), bodyMat);
     torso.position.y = 0.95;
+    torso.castShadow = true;
     group.add(torso);
 
-    const armGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.75, 8);
+    const armGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.75, 14);
     const armL = new THREE.Mesh(armGeo, bodyMat);
     armL.position.set(-0.42, 0.95, 0);
     armL.rotation.z = 0.18;
+    armL.castShadow = true;
     group.add(armL);
     const armR = new THREE.Mesh(armGeo, bodyMat);
     armR.position.set(0.42, 0.95, 0);
     armR.rotation.z = -0.18;
+    armR.castShadow = true;
     group.add(armR);
 
-    const legGeo = new THREE.CylinderGeometry(0.13, 0.11, 0.85, 8);
+    const legGeo = new THREE.CylinderGeometry(0.13, 0.11, 0.85, 14);
     const legL = new THREE.Mesh(legGeo, bodyMat);
     legL.position.set(-0.16, 0.15, 0);
+    legL.castShadow = true;
     group.add(legL);
     const legR = new THREE.Mesh(legGeo, bodyMat);
     legR.position.set(0.16, 0.15, 0);
+    legR.castShadow = true;
     group.add(legR);
 
     group.traverse(obj => { obj.userData.isTargetPart = true; });
@@ -1158,11 +1218,12 @@ window.addEventListener('error', function(e){
   }
   document.addEventListener('mousemove', onMouseMove);
 
-  // Left OR right mouse button: hold and drag to look around (desktop). The browser's
-  // native Pointer Lock is engaged only while a button is held — this locks the real
+  // Right mouse button only: hold and drag to look around (desktop). The browser's
+  // native Pointer Lock is engaged only while the button is held — this locks the real
   // OS cursor exactly where it was (no substitute/fake cursor is drawn), so it can't
-  // wander off or get stuck at the screen edge, and releases the instant the same
-  // button comes up, at which point the real cursor reappears right where it was.
+  // wander off or get stuck at the screen edge, and releases the instant the button
+  // comes up, at which point the real cursor reappears right where it was.
+  // Left mouse button is reserved for firing (see the mousedown handler further below).
   let dragLooking = false;
   let dragButton = -1; // which button started the drag, so mouseup only ends it for that button
   let intentionalUnlock = false;
@@ -1171,7 +1232,7 @@ window.addEventListener('error', function(e){
     // NOTE: deliberately not gated on isTouchDevice — hybrid devices (touchscreen
     // laptops, Surface, Chromebooks) report touch support but are often driven by
     // a real mouse, and a genuine 'mousedown' event means a mouse was used.
-    if((e.button === 0 || e.button === 2) && running){
+    if(e.button === 2 && running){
       e.preventDefault();
       dragLooking = true;
       dragButton = e.button;
@@ -1191,6 +1252,18 @@ window.addEventListener('error', function(e){
         document.exitPointerLock();
       }
     }
+  });
+
+  // Left mouse button: click/hold anywhere on the game view to fire (desktop).
+  // Full-auto weapons keep firing while held, same as the on-screen fire button.
+  renderer.domElement.addEventListener('mousedown', (e)=>{
+    if(e.button === 0 && running && !editMode){
+      e.preventDefault();
+      startFiring();
+    }
+  });
+  window.addEventListener('mouseup', (e)=>{
+    if(e.button === 0) stopFiring();
   });
 
   // Touch: drag anywhere on the canvas to look around, tap the fire button to shoot
@@ -1718,15 +1791,22 @@ window.addEventListener('error', function(e){
     if(e.key === '1') setActiveWeapon('pistol');
     if(e.key === '2') setActiveWeapon('sniper');
     if(e.key === '3') setActiveWeapon('smg');
-    if(e.code === 'KeyW' && !e.repeat) enterScope();
-    if(e.code === 'Space'){
-      e.preventDefault(); // stop the page from scrolling on spacebar
-      if(!e.repeat) startFiring();
+    if(e.code === 'Space') e.preventDefault(); // stop the page from scrolling on spacebar
+    if(e.code === 'KeyW' || e.code === 'Space'){
+      // Only trigger enterScope() on the key's first press (not on OS auto-repeat), and
+      // remember it's held — this way if BOTH W and Space happen to be down at once,
+      // releasing just one won't prematurely cancel the scope while the other is still held.
+      if(!scopeKeysHeld.has(e.code)){
+        scopeKeysHeld.add(e.code);
+        enterScope();
+      }
     }
   });
   document.addEventListener('keyup', (e)=>{
-    if(e.code === 'KeyW') exitScope();
-    if(e.code === 'Space') stopFiring();
+    if(e.code === 'KeyW' || e.code === 'Space'){
+      scopeKeysHeld.delete(e.code);
+      if(scopeKeysHeld.size === 0) exitScope();
+    }
   });
   window.addEventListener('blur', ()=>{
     stopFiring();
@@ -1863,11 +1943,32 @@ window.addEventListener('error', function(e){
   window.addEventListener('mouseup', scopeUp);
 
   // ---------- Pointer lock lifecycle ----------
+  const mainMenu = document.getElementById('mainMenu');
+  const creditsModal = document.getElementById('creditsModal');
+  const mainMenuStartBtn = document.getElementById('mainMenuStartBtn');
+  const mainMenuCreditBtn = document.getElementById('mainMenuCreditBtn');
+  const closeCreditsBtn = document.getElementById('closeCreditsBtn');
+  const backToMainMenuBtn = document.getElementById('backToMainMenuBtn');
   const startOverlay = document.getElementById('startOverlay');
   const pauseOverlay = document.getElementById('pauseOverlay');
   const endOverlay = document.getElementById('endOverlay');
   const resumeBtn = document.getElementById('resumeBtn');
   const restartBtn = document.getElementById('restartBtn');
+
+  mainMenuStartBtn.addEventListener('click', ()=>{
+    mainMenu.style.display = 'none';
+    startOverlay.style.display = 'flex';
+  });
+  mainMenuCreditBtn.addEventListener('click', ()=>{
+    creditsModal.style.display = 'flex';
+  });
+  closeCreditsBtn.addEventListener('click', ()=>{
+    creditsModal.style.display = 'none';
+  });
+  backToMainMenuBtn.addEventListener('click', ()=>{
+    startOverlay.style.display = 'none';
+    mainMenu.style.display = 'flex';
+  });
 
   function requestLock(){
     // Not gated on isTouchDevice: a real mousedown (handled above) is only ever
@@ -1995,9 +2096,9 @@ window.addEventListener('error', function(e){
   // Instructions cover both input methods, since device detection can be unreliable
   document.getElementById('startInstructions').innerHTML =
     'Latih akurasi dan kecepatan tembakmu. Target akan muncul secara acak dan ' +
-    '<b>semakin cepat</b> seiring waktu berjalan. <b>Tahan klik kiri atau kanan mouse lalu geser</b> atau ' +
-    '<b>geser jari di layar</b> untuk membidik, lalu klik / ketuk tombol ' +
-    '<b>TEMBAK</b> (atau klik kiri mouse) untuk menembak.';
+    '<b>semakin cepat</b> seiring waktu berjalan. <b>Tahan klik kanan mouse lalu geser</b> atau ' +
+    '<b>geser jari di layar</b> untuk membidik, lalu <b>klik kiri mouse</b> ' +
+    '(atau ketuk tombol TEMBAK) untuk menembak.';
 
   function resetGame(){
     targets.slice().forEach(removeTarget);
