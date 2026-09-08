@@ -498,7 +498,35 @@
 </div>
 <div id="errorBanner"></div>
 
-<div class="overlay" id="startOverlay">
+<div class="overlay" id="mainMenu">
+  <div class="panel">
+    <h1>🎯 FPS AIM TRAINER</h1>
+    <p>Latih akurasi dan kecepatan tembakmu di padang pasir.</p>
+    <div style="display:flex; flex-direction:column; gap:12px; margin-top:6px;">
+      <button class="btn" id="mainMenuStartBtn">▶ MULAI</button>
+      <button class="btn btn-secondary" id="mainMenuCreditBtn">🎬 KREDIT</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="creditsModal" style="display:none;">
+  <div class="panel">
+    <h1>🎬 Kredit</h1>
+    <div class="guide-page">
+      <h3>🎯 FPS Aim Trainer</h3>
+      <ul>
+        <li>Dikembangkan Dan Di Jaga Oleh <b>YanzzPhyrine / Fikri Alfarizi</b>.</li>
+        <li>Di Support Oleh <b>Zian Firzana</b> Dan <b>Claude AI</b>.</li>
+        <li>Telegram Developer: <b>@privbans</b>.</li>
+        <li>Latih Aim Mu Sampai Jago Agar Tidak Beban Tim.</li>
+        <li>Terinspirasi Dari <b>Blood Strike</b> Dan <b>Aim Champ</b>.</li>
+      </ul>
+    </div>
+    <button class="btn" id="closeCreditsBtn">KEMBALI</button>
+  </div>
+</div>
+
+<div class="overlay" id="startOverlay" style="display:none;">
   <div class="panel">
     <h1>🎯 FPS AIM TRAINER</h1>
     <p id="startInstructions">
@@ -2401,6 +2429,11 @@ window.addEventListener('error', function(e){
   window.addEventListener('mouseup', scopeUp);
 
   // ---------- Pointer lock lifecycle ----------
+  const mainMenu = document.getElementById('mainMenu');
+  const creditsModal = document.getElementById('creditsModal');
+  const mainMenuStartBtn = document.getElementById('mainMenuStartBtn');
+  const mainMenuCreditBtn = document.getElementById('mainMenuCreditBtn');
+  const closeCreditsBtn = document.getElementById('closeCreditsBtn');
   const backToMainMenuBtn = document.getElementById('backToMainMenuBtn');
   const startOverlay = document.getElementById('startOverlay');
   const pauseOverlay = document.getElementById('pauseOverlay');
@@ -2408,10 +2441,19 @@ window.addEventListener('error', function(e){
   const resumeBtn = document.getElementById('resumeBtn');
   const restartBtn = document.getElementById('restartBtn');
 
-  // Menu utama (mainMenu + kredit) sekarang ada di halaman terpisah (start.html)
-  // yang jauh lebih ringan karena tidak memuat Three.js maupun engine game.
+  mainMenuStartBtn.addEventListener('click', ()=>{
+    mainMenu.style.display = 'none';
+    startOverlay.style.display = 'flex';
+  });
+  mainMenuCreditBtn.addEventListener('click', ()=>{
+    creditsModal.style.display = 'flex';
+  });
+  closeCreditsBtn.addEventListener('click', ()=>{
+    creditsModal.style.display = 'none';
+  });
   backToMainMenuBtn.addEventListener('click', ()=>{
-    window.location.href = 'start.html';
+    startOverlay.style.display = 'none';
+    mainMenu.style.display = 'flex';
   });
 
   function requestLock(){
