@@ -58,6 +58,9 @@
   .hud-value{font-size:22px; font-weight:700; color:var(--accent);}
   #timeBox .hud-value{color:#ffd23f;}
   #accBox .hud-value{color:#5ec8ff;}
+  #ammoBox .hud-value{color:#ffb020; transition:color 0.15s ease;}
+  #ammoBox .hud-value.ammo-low{color:#ffd23f;}
+  #ammoBox .hud-value.ammo-empty{color:#ff4d4d;}
 
   /* Crosshair */
   #crosshair{
@@ -157,7 +160,7 @@
     border-color:var(--accent); color:var(--accent);
     box-shadow:0 0 10px rgba(57,255,136,0.3);
   }
-  .weapon-btn.editing, #fireBtn.editing, #scopeBtn.editing, #inspectBtn.editing{
+  .weapon-btn.editing, #fireBtn.editing, #scopeBtn.editing, #inspectBtn.editing, #reloadBtn.editing{
     outline:2px dashed #ffd23f; outline-offset:4px;
   }
 
@@ -233,6 +236,19 @@
     -webkit-tap-highlight-color:transparent; user-select:none; touch-action:manipulation;
   }
   #inspectBtn:active, #inspectBtn.active{ transform:scale(0.92); filter:brightness(1.15); }
+
+  /* Reload button (touch) — manually reloads the currently equipped weapon */
+  #reloadBtn{
+    position:fixed; right:26px; bottom:130px; width:56px; height:56px;
+    border-radius:50%; z-index:8; display:none;
+    background:radial-gradient(circle at 35% 30%, #ffd23f, #b8720f);
+    border:3px solid rgba(255,255,255,0.35);
+    box-shadow:0 4px 16px rgba(255,180,60,0.45);
+    color:#221400; font-weight:800; font-size:10px; letter-spacing:0.3px;
+    align-items:center; justify-content:center; text-align:center;
+    -webkit-tap-highlight-color:transparent; user-select:none; touch-action:manipulation;
+  }
+  #reloadBtn:active, #reloadBtn.active{ transform:scale(0.92); filter:brightness(1.15); }
 
   /* Sniper scope overlay — thick ring lens with duplex crosshair + BDC ladder */
   #scopeOverlay{
@@ -409,6 +425,10 @@
     <div class="hud-label">Skor</div>
     <div class="hud-value" id="scoreVal">0</div>
   </div>
+  <div class="hud-box" id="ammoBox">
+    <div class="hud-label">Amunisi</div>
+    <div class="hud-value" id="ammoVal">12/12</div>
+  </div>
   <div class="hud-box" id="timeBox">
     <div class="hud-label">Waktu</div>
     <div class="hud-value" id="timeVal">60</div>
@@ -426,6 +446,7 @@
 <div id="fireBtn">TEMBAK</div>
 <div id="scopeBtn">SCOPE</div>
 <div id="inspectBtn">INSPEKSI</div>
+<div id="reloadBtn">RELOAD</div>
 <div id="weaponSwitch">
   <div class="weapon-btn active" data-weapon="pistol">1 · PISTOL</div>
   <div class="weapon-btn" data-weapon="sniper">2 · SNIPER</div>
@@ -445,6 +466,10 @@
   <div class="bsp-row">
     <label>Ukuran Tombol Inspeksi: <span id="inspectSizeVal">28</span> / 100</label>
     <input type="range" id="inspectSizeSlider" min="1" max="100" step="1" value="28">
+  </div>
+  <div class="bsp-row">
+    <label>Ukuran Tombol Reload: <span id="reloadSizeVal">30</span> / 100</label>
+    <input type="range" id="reloadSizeSlider" min="1" max="100" step="1" value="30">
   </div>
 </div>
 <div id="finishBtn">SELESAI</div>
@@ -473,35 +498,7 @@
 </div>
 <div id="errorBanner"></div>
 
-<div class="overlay" id="mainMenu">
-  <div class="panel">
-    <h1>🎯 FPS AIM TRAINER</h1>
-    <p>Latih akurasi dan kecepatan tembakmu di padang pasir.</p>
-    <div style="display:flex; flex-direction:column; gap:12px; margin-top:6px;">
-      <button class="btn" id="mainMenuStartBtn">▶ MULAI</button>
-      <button class="btn btn-secondary" id="mainMenuCreditBtn">🎬 KREDIT</button>
-    </div>
-  </div>
-</div>
-
-<div class="overlay" id="creditsModal" style="display:none;">
-  <div class="panel">
-    <h1>🎬 Kredit</h1>
-    <div class="guide-page">
-      <h3>🎯 FPS Aim Trainer</h3>
-      <ul>
-        <li>Dikembangkan Dan Di Jaga Oleh <b>YanzzPhyrine / Fikri Alfarizi</b>.</li>
-        <li>Di Support Oleh <b>Zian Firzana</b> Dan <b>Claude AI</b>.</li>
-        <li>Telegram Developer: <b>@privbans</b>.</li>
-        <li>Latih Aim Mu Sampai Jago Agar Tidak Beban Tim.</li>
-        <li>Terinspirasi Dari <b>Blood Strike</b> Dan <b>Aim Champ</b>.</li>
-      </ul>
-    </div>
-    <button class="btn" id="closeCreditsBtn">KEMBALI</button>
-  </div>
-</div>
-
-<div class="overlay" id="startOverlay" style="display:none;">
+<div class="overlay" id="startOverlay">
   <div class="panel">
     <h1>🎯 FPS AIM TRAINER</h1>
     <p id="startInstructions">
@@ -528,14 +525,17 @@
         <li>Tahan/klik <b>klik kiri</b> untuk menembak (senjata full-auto akan menembak beruntun selama ditahan).</li>
         <li>Tekan tombol <b>1 / 2 / 3</b> untuk ganti senjata: Pistol, Sniper, SMG.</li>
         <li>Tahan tombol <b>Spasi</b> atau <b>W</b> untuk mengintip lewat scope sniper.</li>
-        <li>Tekan tombol <b>V</b> untuk memainkan animasi inspeksi senjata yang sedang dipegang.</li>
+        <li>Tekan tombol <b>V</b> untuk memainkan animasi inspeksi senjata yang sedang dipegang — jumlah amunisi di magasin akan terlihat jelas di layar digital pada senjata.</li>
+        <li>Tekan tombol <b>R</b> untuk mengisi ulang (reload) amunisi kapan saja.</li>
       </ul>
       <h3>👆 Kontrol Sentuh (HP/Tablet)</h3>
       <ul>
         <li>Geser jari di layar untuk membidik.</li>
         <li>Ketuk atau tahan tombol <b>TEMBAK</b> untuk menembak.</li>
         <li>Tahan tombol <b>SCOPE</b> untuk mengintip lewat sniper.</li>
-        <li>Ketuk tombol <b>INSPEKSI</b> untuk memutar/menampilkan senjata yang sedang dipegang.</li>
+        <li>Ketuk tombol <b>INSPEKSI</b> untuk memutar/menampilkan senjata yang sedang dipegang, sekaligus melihat sisa amunisinya.</li>
+        <li>Ketuk tombol <b>RELOAD</b> kapan saja untuk mengisi ulang amunisi secara manual.</li>
+        <li>Senjata akan otomatis reload saat amunisi habis — cukup tunggu sebentar sebelum menembak lagi.</li>
         <li>Gunakan tombol <b>ATUR TOMBOL</b> untuk memindah/mengubah ukuran tombol di layar.</li>
       </ul>
       <h3>⚙ Pengaturan</h3>
@@ -546,6 +546,12 @@
       <ul>
         <li><b>MODE WAKTU</b>: 60 detik untuk mendapat skor setinggi mungkin.</li>
         <li><b>MODE BEBAS</b>: bermain tanpa batas waktu, tekan SELESAI kapan saja untuk melihat hasil.</li>
+      </ul>
+      <h3>🔫 Amunisi &amp; Reload</h3>
+      <ul>
+        <li>Setiap senjata punya kapasitas magasin sendiri: Pistol 12, Sniper 10, SMG 60 peluru.</li>
+        <li>Sisa amunisi terlihat di HUD atas dan pada layar digital kecil di badan senjata (terlihat jelas saat inspeksi).</li>
+        <li>Reload otomatis berjalan saat magasin kosong; tekan <b>R</b> (PC) untuk reload manual kapan saja.</li>
       </ul>
       <h3>💯 Skor &amp; Statistik</h3>
       <ul>
@@ -578,6 +584,11 @@
         <input type="range" id="gyroSensSlider" min="0.3" max="3" step="0.1" value="1.5">
       </label>
       <button type="button" class="btn btn-secondary" id="gyroCalibrateBtn" style="margin-top:12px; width:100%;">KALIBRASI ULANG</button>
+    </div>
+    <label class="gyro-slider-label" style="margin-top:14px; display:block;">Target FPS (performa grafis)</label>
+    <div class="cms-options" style="margin-top:8px;">
+      <button type="button" class="cms-btn" id="fpsBtn90">90 FPS</button>
+      <button type="button" class="cms-btn active" id="fpsBtn120">120 FPS</button>
     </div>
     <p id="gyroStatusText" class="gyro-status"></p>
     <button class="btn" id="closeGyroModalBtn" style="margin-top:16px; width:100%;">TUTUP</button>
@@ -645,7 +656,6 @@ window.addEventListener('error', function(e){
   // Cap pixel ratio lower on touch/mobile hardware — rendering at full native pixel density
   // on phones is one of the biggest hidden GPU costs and a common cause of stutter.
   const isLikelyMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isLikelyMobile ? 1.5 : 2));
   // HD visual upgrade: soft real-time shadows + filmic tone mapping/sRGB output for
   // richer contrast and color — tuned down from the initial version (smaller shadow map,
   // cheaper shadow filtering) since soft high-res shadows were a major source of stutter,
@@ -680,6 +690,41 @@ window.addEventListener('error', function(e){
   const fill = new THREE.PointLight(0xffb46b, 0.6, 40);
   fill.position.set(0, -2, 4);
   scene.add(fill);
+
+  // ---------- Adaptive quality scaling ----------
+  // Always starts at the highest (HD) tier the device class supports, then watches the
+  // rolling FPS reading (computed below) and nudges pixel ratio + shadow resolution down
+  // a notch if the frame rate can't sustain the chosen target, or back up again once
+  // performance has headroom. This keeps gameplay smooth without permanently sacrificing
+  // visual quality on hardware that can actually handle it.
+  const PR_LEVELS = isLikelyMobile ? [0.75, 1, 1.5] : [1, 1.5, 2];
+  const SHADOW_LEVELS = [512, 768, 1024];
+  let qualityLevel = PR_LEVELS.length - 1; // start at max (HD)
+  let lowFpsStreak = 0, highFpsStreak = 0;
+
+  function applyQuality(level){
+    qualityLevel = Math.max(0, Math.min(PR_LEVELS.length - 1, level));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, PR_LEVELS[qualityLevel]));
+    const sm = SHADOW_LEVELS[qualityLevel];
+    if(sun.shadow.mapSize.width !== sm){
+      sun.shadow.mapSize.set(sm, sm);
+      if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map = null; } // force regen at new size
+    }
+  }
+  applyQuality(qualityLevel);
+
+  // Called a few times a second from the FPS meter with the freshly measured fps.
+  function adaptQuality(fps){
+    if(fps < targetFps * 0.75){
+      lowFpsStreak++; highFpsStreak = 0;
+      if(lowFpsStreak >= 2 && qualityLevel > 0){ applyQuality(qualityLevel - 1); lowFpsStreak = 0; }
+    } else if(fps > targetFps * 0.95){
+      highFpsStreak++; lowFpsStreak = 0;
+      if(highFpsStreak >= 6 && qualityLevel < PR_LEVELS.length - 1){ applyQuality(qualityLevel + 1); highFpsStreak = 0; }
+    } else {
+      lowFpsStreak = 0; highFpsStreak = 0;
+    }
+  }
 
   // Sand ground plane
   const sandGeo = new THREE.PlaneGeometry(90, 90);
@@ -771,33 +816,136 @@ window.addEventListener('error', function(e){
     return flash;
   }
 
+  // ---------- Weapon skin texture ----------
+  // Generates a small tileable carbon-fiber/weave pattern on a canvas, reused as the
+  // diffuse map for a weapon's main material. Cheap on the GPU (one tiny repeating
+  // texture) but reads as a proper "custom skin" instead of flat color, and the
+  // clearcoat layer on the material gives it a glossy, HD gunmetal finish.
+  function makeSkinTexture(baseColor, weaveColor, accentColor){
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(0,0,size,size);
+    ctx.strokeStyle = weaveColor;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 2;
+    for(let i=-size; i<size*2; i+=10){
+      ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i+size,size); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(i,size); ctx.lineTo(i+size,0); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    // A thin accent pinstripe running the length of the texture — the "custom skin" signature.
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(0, size*0.46, size, size*0.05);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3, 2);
+    tex.anisotropy = 4;
+    return tex;
+  }
+
+  // ---------- Digital ammo readout ----------
+  // A tiny canvas-driven "LED" plate mounted on each weapon's receiver, showing the
+  // current magazine count in real time. It's mounted facing the player so it reads
+  // normally while aiming, and turns into full view during the inspect animation —
+  // this is the in-world "ammo display" the weapon inspect shows off.
+  function createAmmoReadout(planeW, planeH){
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.LinearFilter;
+    const mat = new THREE.MeshBasicMaterial({ map:texture, transparent:true, depthWrite:true });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH), mat);
+    function setText(txt, color){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = 'rgba(4,7,9,0.92)';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(3,3,canvas.width-6,canvas.height-6);
+      ctx.fillStyle = color || '#39ff88';
+      ctx.font = "700 40px 'Segoe UI', monospace";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = color || '#39ff88';
+      ctx.shadowBlur = 14;
+      ctx.fillText(txt, canvas.width/2, canvas.height/2+2);
+      texture.needsUpdate = true;
+    }
+    setText('--');
+    return { mesh, setText };
+  }
+
+  // Pushes a weapon's current ammo count to both its in-world readout and (if it's the
+  // equipped weapon) the top HUD ammo box.
+  function syncAmmoUI(w){
+    if(!w) return;
+    const color = w.ammo <= 0 ? '#ff4d4d' : (w.ammo <= Math.ceil(w.magSize*0.3) ? '#ffd23f' : '#39ff88');
+    if(w.ammoReadout) w.ammoReadout.setText(String(w.ammo).padStart(2,'0'), color);
+    if(w === weapons[currentWeapon]){
+      ammoVal.textContent = (w.ammo) + '/' + w.magSize;
+      ammoVal.classList.toggle('ammo-empty', w.ammo <= 0);
+      ammoVal.classList.toggle('ammo-low', w.ammo > 0 && w.ammo <= Math.ceil(w.magSize*0.3));
+    }
+  }
+
   // --- Pistol ---
   (function buildPistol(){
     const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color:0x232a33, roughness:0.4, metalness:0.7 });
-    const accent = new THREE.MeshStandardMaterial({ color:0x39ff88, emissive:0x0f3a22, roughness:0.3, metalness:0.5 });
+    const mat = new THREE.MeshPhysicalMaterial({
+      color:0x2a323d, map:makeSkinTexture('#242b34','#3a4453','#39ff88'),
+      roughness:0.32, metalness:0.8, clearcoat:0.65, clearcoatRoughness:0.25
+    });
+    const accent = new THREE.MeshStandardMaterial({ color:0x39ff88, emissive:0x1a6b3e, emissiveIntensity:1.1, roughness:0.25, metalness:0.5 });
+    const darkTrim = new THREE.MeshStandardMaterial({ color:0x0c0f12, roughness:0.5, metalness:0.6 });
 
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.14,0.55), mat);
     body.position.set(0,0,-0.3);
     group.add(body);
 
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.4,12), mat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.4,14), mat);
     barrel.rotation.x = Math.PI/2;
     barrel.position.set(0,0.025,-0.78);
     group.add(barrel);
+
+    // Threaded compensator tip — a small HD detail that reads clearly during inspect.
+    const comp = new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.04,0.07,14), darkTrim);
+    comp.rotation.x = Math.PI/2;
+    comp.position.set(0,0.025,-0.99);
+    group.add(comp);
 
     const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.28,0.12), mat);
     grip.position.set(0,-0.16,-0.05);
     grip.rotation.x = 0.35;
     group.add(grip);
 
+    // Trigger guard loop for a more complete, realistic silhouette.
+    const guard = new THREE.Mesh(new THREE.TorusGeometry(0.055,0.012,8,16,Math.PI), darkTrim);
+    guard.position.set(0,-0.05,-0.12);
+    guard.rotation.z = Math.PI;
+    group.add(guard);
+
+    // Top accessory rail — thin ridged strip, a common "tactical skin" touch.
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.02,0.34), darkTrim);
+    rail.position.set(0,0.075,-0.32);
+    group.add(rail);
+
     const sight = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.05,0.05), accent);
-    sight.position.set(0,0.09,-0.4);
+    sight.position.set(0,0.1,-0.4);
     group.add(sight);
 
     const muzzleFlash = makeMuzzleFlash();
-    muzzleFlash.position.set(0,0.025,-1.0);
+    muzzleFlash.position.set(0,0.025,-1.02);
     group.add(muzzleFlash);
+
+    // Digital ammo readout, mounted on the rear of the slide facing the player.
+    const ammoReadout = createAmmoReadout(0.09,0.045);
+    ammoReadout.mesh.position.set(0,0.03,-0.045);
+    group.add(ammoReadout.mesh);
 
     const basePos = new THREE.Vector3(0.32,-0.32,-0.55);
     group.position.copy(basePos);
@@ -805,48 +953,87 @@ window.addEventListener('error', function(e){
     const baseRot = group.rotation.clone();
     camera.add(group);
 
-    weapons.pistol = { group, basePos, baseRot, muzzleFlash, recoil:0, recoilKick:0.06, viewKick:0.012, hasScope:false, auto:false, fireRate:260, headDamage:28, bodyDamage:26,
+    weapons.pistol = { group, basePos, baseRot, muzzleFlash, ammoReadout, recoil:0, recoilKick:0.06, viewKick:0.012, hasScope:false, auto:false, fireRate:260, headDamage:28, bodyDamage:26,
+      magSize:12, ammo:12, reloadDuration:1.1,
       inspectDuration:1.3, inspectPos:new THREE.Vector3(-0.05,0.06,0.14), inspectYaw:0.6, inspectPitch:0.24, inspectRoll:0.14 };
+    ammoReadout.setText('12', '#39ff88');
   })();
 
   // --- Sniper rifle ---
   (function buildSniper(){
     const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color:0x1c2420, roughness:0.45, metalness:0.55 });
-    const accent = new THREE.MeshStandardMaterial({ color:0x5ec8ff, emissive:0x0a2233, roughness:0.3, metalness:0.5 });
-    const glass = new THREE.MeshStandardMaterial({ color:0x0a1a22, roughness:0.15, metalness:0.3, emissive:0x0d2a33 });
+    const mat = new THREE.MeshPhysicalMaterial({
+      color:0x1e2622, map:makeSkinTexture('#181f1c','#2c3833','#5ec8ff'),
+      roughness:0.38, metalness:0.7, clearcoat:0.55, clearcoatRoughness:0.3
+    });
+    const accent = new THREE.MeshStandardMaterial({ color:0x5ec8ff, emissive:0x1c5b7a, emissiveIntensity:1.1, roughness:0.25, metalness:0.5 });
+    const glass = new THREE.MeshStandardMaterial({ color:0x0a1a22, roughness:0.1, metalness:0.35, emissive:0x0d2a33 });
+    const darkTrim = new THREE.MeshStandardMaterial({ color:0x0b0e0c, roughness:0.55, metalness:0.5 });
 
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.13,1.05), mat);
     body.position.set(0,-0.02,-0.55);
     group.add(body);
 
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.85,12), mat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.85,14), mat);
     barrel.rotation.x = Math.PI/2;
     barrel.position.set(0,0.0,-1.35);
     group.add(barrel);
 
+    // Muzzle brake — a wider, slotted-looking cap at the barrel tip for a beefier HD read.
+    const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.045,0.14,14), darkTrim);
+    brake.rotation.x = Math.PI/2;
+    brake.position.set(0,0.0,-1.82);
+    group.add(brake);
+
+    // Folded bipod legs tucked under the front of the barrel — classic sniper detailing.
+    const bipodMat = darkTrim;
+    const bipodL = new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.22,6), bipodMat);
+    bipodL.position.set(-0.05,-0.09,-1.55);
+    bipodL.rotation.z = 0.35;
+    group.add(bipodL);
+    const bipodR = new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.22,6), bipodMat);
+    bipodR.position.set(0.05,-0.09,-1.55);
+    bipodR.rotation.z = -0.35;
+    group.add(bipodR);
+
     const stock = new THREE.Mesh(new THREE.BoxGeometry(0.09,0.16,0.4), mat);
     stock.position.set(0,-0.08,0.15);
     group.add(stock);
+
+    // Cheek riser stripe on the stock — a colored accent line, the visible "custom skin" cue.
+    const cheekStripe = new THREE.Mesh(new THREE.BoxGeometry(0.093,0.02,0.36), accent);
+    cheekStripe.position.set(0,0.005,0.15);
+    group.add(cheekStripe);
 
     const grip = new THREE.Mesh(new THREE.BoxGeometry(0.09,0.26,0.11), mat);
     grip.position.set(0,-0.18,-0.28);
     grip.rotation.x = 0.3;
     group.add(grip);
 
-    const scopeTube = new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.42,14), accent);
+    const scopeTube = new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.42,16), accent);
     scopeTube.rotation.x = Math.PI/2;
     scopeTube.position.set(0,0.13,-0.55);
     group.add(scopeTube);
 
-    const scopeLens = new THREE.Mesh(new THREE.CircleGeometry(0.043,14), glass);
+    const scopeLens = new THREE.Mesh(new THREE.CircleGeometry(0.043,16), glass);
     scopeLens.position.set(0,0.13,-0.34);
     group.add(scopeLens);
 
+    // Bolt handle on the side of the receiver — small but sells the "real rifle" look up close.
+    const bolt = new THREE.Mesh(new THREE.SphereGeometry(0.02,8,8), darkTrim);
+    bolt.position.set(0.075,-0.01,-0.2);
+    group.add(bolt);
+
     const muzzleFlash = makeMuzzleFlash();
     muzzleFlash.scale.setScalar(1.2);
-    muzzleFlash.position.set(0,0.0,-1.78);
+    muzzleFlash.position.set(0,0.0,-1.85);
     group.add(muzzleFlash);
+
+    // Digital ammo readout on top of the receiver, just behind the scope.
+    const ammoReadout = createAmmoReadout(0.08,0.04);
+    ammoReadout.mesh.position.set(0,0.09,-0.08);
+    ammoReadout.mesh.rotation.x = -0.15;
+    group.add(ammoReadout.mesh);
 
     const basePos = new THREE.Vector3(0.3,-0.34,-0.35);
     group.position.copy(basePos);
@@ -855,16 +1042,21 @@ window.addEventListener('error', function(e){
     group.visible = false;
     camera.add(group);
 
-    weapons.sniper = { group, basePos, baseRot, muzzleFlash, recoil:0, recoilKick:0.11, viewKick:0.022, hasScope:true, auto:false, fireRate:900, headDamage:110, bodyDamage:70,
+    weapons.sniper = { group, basePos, baseRot, muzzleFlash, ammoReadout, recoil:0, recoilKick:0.11, viewKick:0.022, hasScope:true, auto:false, fireRate:900, headDamage:110, bodyDamage:70,
+      magSize:10, ammo:10, reloadDuration:1.6,
       inspectDuration:1.7, inspectPos:new THREE.Vector3(-0.08,0.08,0.2), inspectYaw:0.45, inspectPitch:0.18, inspectRoll:0.18 };
+    ammoReadout.setText('10', '#39ff88');
   })();
 
   // --- SMG (UMP) — compact, full-auto submachine gun ---
   (function buildSMG(){
     const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color:0x2a2620, roughness:0.5, metalness:0.5 });
+    const mat = new THREE.MeshPhysicalMaterial({
+      color:0x322c22, map:makeSkinTexture('#2a251d','#403830','#ffb020'),
+      roughness:0.4, metalness:0.65, clearcoat:0.5, clearcoatRoughness:0.3
+    });
     const matDark = new THREE.MeshStandardMaterial({ color:0x141210, roughness:0.55, metalness:0.4 });
-    const accent = new THREE.MeshStandardMaterial({ color:0xffb020, emissive:0x3a2200, roughness:0.3, metalness:0.5 });
+    const accent = new THREE.MeshStandardMaterial({ color:0xffb020, emissive:0x7a4400, emissiveIntensity:1.1, roughness:0.25, metalness:0.5 });
 
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.13,0.16,0.62), mat);
     body.position.set(0,0,-0.32);
@@ -874,19 +1066,35 @@ window.addEventListener('error', function(e){
     receiver.position.set(0,0.05,-0.1);
     group.add(receiver);
 
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.028,0.32,10), matDark);
+    // Accent stripe down the receiver — the visible custom-skin cue on the SMG.
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.132,0.018,0.6), accent);
+    stripe.position.set(0,0.05,-0.32);
+    group.add(stripe);
+
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.028,0.32,12), matDark);
     barrel.rotation.x = Math.PI/2;
     barrel.position.set(0,0.01,-0.72);
     group.add(barrel);
 
-    const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.075,0.32,0.11), matDark);
-    magazine.position.set(0,-0.28,-0.28);
+    // Foregrip under the barrel — adds silhouette detail and reads well up close.
+    const foregrip = new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.032,0.14,10), matDark);
+    foregrip.position.set(0,-0.1,-0.58);
+    group.add(foregrip);
+
+    const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.075,0.34,0.11), matDark);
+    magazine.position.set(0,-0.29,-0.28);
     magazine.rotation.x = -0.12;
     group.add(magazine);
 
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.09,0.32), mat);
-    stock.position.set(0,-0.02,0.14);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.09,0.34), mat);
+    stock.position.set(0,-0.02,0.15);
     group.add(stock);
+
+    // Folding stock strut — a thin cylinder linking receiver to stock, more premium detail.
+    const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.22,8), matDark);
+    strut.rotation.x = Math.PI/2;
+    strut.position.set(0,0.0,0.06);
+    group.add(strut);
 
     const grip = new THREE.Mesh(new THREE.BoxGeometry(0.09,0.24,0.1), matDark);
     grip.position.set(0,-0.16,-0.06);
@@ -902,6 +1110,12 @@ window.addEventListener('error', function(e){
     muzzleFlash.position.set(0,0.01,-0.9);
     group.add(muzzleFlash);
 
+    // Digital ammo readout on top of the receiver, right behind the front sight.
+    const ammoReadout = createAmmoReadout(0.085,0.042);
+    ammoReadout.mesh.position.set(0,0.1,-0.28);
+    ammoReadout.mesh.rotation.x = -0.1;
+    group.add(ammoReadout.mesh);
+
     const basePos = new THREE.Vector3(0.3,-0.33,-0.5);
     group.position.copy(basePos);
     group.rotation.y = -0.05;
@@ -909,8 +1123,10 @@ window.addEventListener('error', function(e){
     group.visible = false;
     camera.add(group);
 
-    weapons.smg = { group, basePos, baseRot, muzzleFlash, recoil:0, recoilKick:0.045, viewKick:0.007, hasScope:false, auto:true, fireRate:95, headDamage:32, bodyDamage:28,
+    weapons.smg = { group, basePos, baseRot, muzzleFlash, ammoReadout, recoil:0, recoilKick:0.045, viewKick:0.007, hasScope:false, auto:true, fireRate:95, headDamage:32, bodyDamage:28,
+      magSize:60, ammo:60, reloadDuration:1.8,
       inspectDuration:1.15, inspectPos:new THREE.Vector3(-0.06,0.07,0.12), inspectYaw:0.65, inspectPitch:0.28, inspectRoll:0.22 };
+    ammoReadout.setText('60', '#39ff88');
   })();
 
   let currentWeapon = 'pistol';
@@ -938,7 +1154,7 @@ window.addEventListener('error', function(e){
   }
 
   function triggerInspect(){
-    if(!running || paused || scoped || firing || inspecting) return;
+    if(!running || paused || scoped || firing || inspecting || reloading) return;
     if(!weapons[currentWeapon]) return;
     inspecting = true;
     inspectT = 0;
@@ -993,7 +1209,7 @@ window.addEventListener('error', function(e){
 
   function enterScope(){
     if(weapons[currentWeapon] && !weapons[currentWeapon].hasScope) return;
-    if(!running || paused || scoped) return;
+    if(!running || paused || scoped || reloading) return;
     cancelInspect();
     scoped = true;
     camera.fov = SCOPE_FOV;
@@ -1016,6 +1232,7 @@ window.addEventListener('error', function(e){
       btn.classList.toggle('active', btn.dataset.weapon === name);
     });
     scopeBtn.style.display = (name === 'sniper' && running) ? 'flex' : 'none';
+    syncAmmoUI(weapons[name]);
   }
 
   // ---------- Firing: single-shot for pistol/sniper, hold-to-fire for full-auto (SMG) ----------
@@ -1028,7 +1245,7 @@ window.addEventListener('error', function(e){
     if(!w) return;
     cancelInspect();
     shoot();
-    if(w.auto){
+    if(w.auto && !reloading){
       firing = true;
       autoFireAccum = 0;
     }
@@ -1036,6 +1253,51 @@ window.addEventListener('error', function(e){
   function stopFiring(){
     firing = false;
     autoFireAccum = 0;
+  }
+
+  // ---------- Reload ----------
+  // Empties out of ammo and holds the weapon in a short dip-and-recover animation before
+  // topping the magazine back up. Triggers automatically the moment a shot is attempted
+  // with an empty mag, or manually anytime via the R key.
+  let reloading = false;
+  let reloadWeaponName = null;
+  let reloadT = 0;
+
+  function startReload(){
+    if(!running || paused || scoped) return;
+    const w = weapons[currentWeapon];
+    if(!w || reloading || w.ammo >= w.magSize) return;
+    cancelInspect();
+    stopFiring();
+    reloading = true;
+    reloadWeaponName = currentWeapon;
+    reloadT = 0;
+    playReloadSound();
+    reloadBtn.classList.add('active');
+    if(ammoVal){ ammoVal.textContent = 'RELOAD'; ammoVal.classList.remove('ammo-empty'); ammoVal.classList.add('ammo-low'); }
+  }
+
+  function updateReload(dt){
+    if(!reloading) return;
+    const w = weapons[reloadWeaponName];
+    if(!w || reloadWeaponName !== currentWeapon){ reloading = false; reloadWeaponName = null; reloadBtn.classList.remove('active'); return; }
+    reloadT += dt;
+    const dur = w.reloadDuration || 1.3;
+    const p = Math.min(reloadT / dur, 1);
+    const dip = Math.sin(p * Math.PI); // 0 -> 1 -> 0: lowers the weapon out of view, then brings it back
+    w.group.position.copy(w.basePos);
+    w.group.position.y -= dip * 0.22;
+    w.group.rotation.copy(w.baseRot);
+    w.group.rotation.x += dip * 0.4;
+    if(p >= 1){
+      w.group.position.copy(w.basePos);
+      w.group.rotation.copy(w.baseRot);
+      w.ammo = w.magSize;
+      reloading = false;
+      reloadWeaponName = null;
+      reloadBtn.classList.remove('active');
+      syncAmmoUI(w);
+    }
   }
 
   // Target group (humanoid-style characters instead of plain balls)
@@ -1586,6 +1848,9 @@ window.addEventListener('error', function(e){
     dragSensVal.textContent = dragSensScale;
   });
 
+  document.getElementById('fpsBtn90').addEventListener('click', ()=> setTargetFps(90));
+  document.getElementById('fpsBtn120').addEventListener('click', ()=> setTargetFps(120));
+
   gyroCalibrateBtn.addEventListener('click', recalibrateGyro);
 
   if(!gyroSupported){
@@ -1707,9 +1972,40 @@ window.addEventListener('error', function(e){
     ding2.start(now+0.14); ding2.stop(now+0.34);
   }
 
+  // Dry-fire click: short, dull, when the trigger is pulled on an empty magazine.
+  function playDryFireSound(){
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(900, now);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.22, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now+0.05);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(now); osc.stop(now+0.05);
+  }
+
+  // Reload sound: two quick mechanical clacks (mag-out, mag-in).
+  function playReloadSound(){
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+    [0, 0.22].forEach(delay=>{
+      const osc = audioCtx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(320, now+delay);
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.28, now+delay);
+      g.gain.exponentialRampToValueAtTime(0.001, now+delay+0.07);
+      osc.connect(g).connect(audioCtx.destination);
+      osc.start(now+delay); osc.stop(now+delay+0.07);
+    });
+  }
+
   const scoreVal = document.getElementById('scoreVal');
   const timeVal  = document.getElementById('timeVal');
   const accVal   = document.getElementById('accVal');
+  const ammoVal  = document.getElementById('ammoVal');
   const crosshair = document.getElementById('crosshair');
   const hitmarker = document.getElementById('hitmarker');
   const hud = document.getElementById('hud');
@@ -1718,6 +2014,7 @@ window.addEventListener('error', function(e){
   const scopeOverlay = document.getElementById('scopeOverlay');
   const scopeBtn = document.getElementById('scopeBtn');
   const inspectBtn = document.getElementById('inspectBtn');
+  const reloadBtn = document.getElementById('reloadBtn');
   const weaponSwitch = document.getElementById('weaponSwitch');
 
   function updateHUD(){
@@ -1747,7 +2044,16 @@ window.addEventListener('error', function(e){
   }
 
   function shoot(){
-    if(!running || paused) return;
+    if(!running || paused || reloading) return;
+    const w = weapons[currentWeapon];
+    if(!w) return;
+    if(w.ammo <= 0){
+      playDryFireSound();
+      startReload();
+      return;
+    }
+    w.ammo--;
+    syncAmmoUI(w);
     shots++;
     playShotSound();
     triggerRecoil();
@@ -1900,12 +2206,15 @@ window.addEventListener('error', function(e){
   });
   // Inspect button — same generic tap/drag handler as the weapon buttons
   enableDrag(inspectBtn, triggerInspect);
+  // Reload button — same generic tap/drag handler, manually reloads whichever weapon is equipped
+  enableDrag(reloadBtn, startReload);
   document.addEventListener('keydown', (e)=>{
     if(!running || paused) return;
     if(e.key === '1') setActiveWeapon('pistol');
     if(e.key === '2') setActiveWeapon('sniper');
     if(e.key === '3') setActiveWeapon('smg');
     if(e.key === 'v' || e.key === 'V') triggerInspect();
+    if(e.key === 'r' || e.key === 'R') startReload();
     if(e.code === 'Space') e.preventDefault(); // stop the page from scrolling on spacebar
     if(e.code === 'KeyW' || e.code === 'Space'){
       // Only trigger enterScope() on the key's first press (not on OS auto-repeat), and
@@ -1941,10 +2250,13 @@ window.addEventListener('error', function(e){
   const scopeSizeVal = document.getElementById('scopeSizeVal');
   const inspectSizeSlider = document.getElementById('inspectSizeSlider');
   const inspectSizeVal = document.getElementById('inspectSizeVal');
+  const reloadSizeSlider = document.getElementById('reloadSizeSlider');
+  const reloadSizeVal = document.getElementById('reloadSizeVal');
 
   const FIRE_SIZE_MIN = 44, FIRE_SIZE_MAX = 160;       // px diameter range for the fire button
   const SCOPE_SIZE_MIN = 32, SCOPE_SIZE_MAX = 120;     // px diameter range for the scope button
   const INSPECT_SIZE_MIN = 32, INSPECT_SIZE_MAX = 110; // px diameter range for the inspect button
+  const RELOAD_SIZE_MIN = 32, RELOAD_SIZE_MAX = 110;   // px diameter range for the reload button
 
   function sliderToPx(v, min, max){ return min + (v-1)/99 * (max-min); }
   function pxToSlider(px, min, max){ return Math.round(1 + (px-min)/(max-min) * 99); }
@@ -1970,6 +2282,13 @@ window.addEventListener('error', function(e){
     inspectBtn.style.fontSize = Math.max(7, px*0.17) + 'px';
     reclampAfterResize(inspectBtn);
   }
+  function applyReloadSize(v){
+    const px = sliderToPx(v, RELOAD_SIZE_MIN, RELOAD_SIZE_MAX);
+    reloadBtn.style.width = px + 'px';
+    reloadBtn.style.height = px + 'px';
+    reloadBtn.style.fontSize = Math.max(7, px*0.18) + 'px';
+    reclampAfterResize(reloadBtn);
+  }
 
   // If the button was already pinned to a left/top position, keep it fully on-screen after resizing
   function reclampAfterResize(el){
@@ -1991,6 +2310,10 @@ window.addEventListener('error', function(e){
     inspectSizeVal.textContent = inspectSizeSlider.value;
     applyInspectSize(parseInt(inspectSizeSlider.value, 10));
   });
+  reloadSizeSlider.addEventListener('input', ()=>{
+    reloadSizeVal.textContent = reloadSizeSlider.value;
+    applyReloadSize(parseInt(reloadSizeSlider.value, 10));
+  });
 
   // Read each button's actual current size back into its slider, so reopening
   // edit mode shows the size you left it at instead of resetting the slider.
@@ -1998,19 +2321,22 @@ window.addEventListener('error', function(e){
     const fireW = fireBtn.getBoundingClientRect().width || 84;
     const scopeW = scopeBtn.getBoundingClientRect().width || 58;
     const inspectW = inspectBtn.getBoundingClientRect().width || 52;
+    const reloadW = reloadBtn.getBoundingClientRect().width || 56;
     const fireV = Math.max(1, Math.min(100, pxToSlider(fireW, FIRE_SIZE_MIN, FIRE_SIZE_MAX)));
     const scopeV = Math.max(1, Math.min(100, pxToSlider(scopeW, SCOPE_SIZE_MIN, SCOPE_SIZE_MAX)));
     const inspectV = Math.max(1, Math.min(100, pxToSlider(inspectW, INSPECT_SIZE_MIN, INSPECT_SIZE_MAX)));
+    const reloadV = Math.max(1, Math.min(100, pxToSlider(reloadW, RELOAD_SIZE_MIN, RELOAD_SIZE_MAX)));
     fireSizeSlider.value = fireV; fireSizeVal.textContent = fireV;
     scopeSizeSlider.value = scopeV; scopeSizeVal.textContent = scopeV;
     inspectSizeSlider.value = inspectV; inspectSizeVal.textContent = inspectV;
+    reloadSizeSlider.value = reloadV; reloadSizeVal.textContent = reloadV;
   }
 
   function setEditMode(v){
     editMode = v;
     editLayoutBtn.textContent = v ? 'SELESAI ATUR' : 'ATUR TOMBOL';
     editLayoutBtn.classList.toggle('active', v);
-    [fireBtn, scopeBtn, inspectBtn, ...document.querySelectorAll('.weapon-btn')].forEach(el=>{
+    [fireBtn, scopeBtn, inspectBtn, reloadBtn, ...document.querySelectorAll('.weapon-btn')].forEach(el=>{
       el.classList.toggle('editing', v);
     });
     // Scope button is normally hidden unless the sniper is the active weapon — force it
@@ -2075,11 +2401,6 @@ window.addEventListener('error', function(e){
   window.addEventListener('mouseup', scopeUp);
 
   // ---------- Pointer lock lifecycle ----------
-  const mainMenu = document.getElementById('mainMenu');
-  const creditsModal = document.getElementById('creditsModal');
-  const mainMenuStartBtn = document.getElementById('mainMenuStartBtn');
-  const mainMenuCreditBtn = document.getElementById('mainMenuCreditBtn');
-  const closeCreditsBtn = document.getElementById('closeCreditsBtn');
   const backToMainMenuBtn = document.getElementById('backToMainMenuBtn');
   const startOverlay = document.getElementById('startOverlay');
   const pauseOverlay = document.getElementById('pauseOverlay');
@@ -2087,19 +2408,10 @@ window.addEventListener('error', function(e){
   const resumeBtn = document.getElementById('resumeBtn');
   const restartBtn = document.getElementById('restartBtn');
 
-  mainMenuStartBtn.addEventListener('click', ()=>{
-    mainMenu.style.display = 'none';
-    startOverlay.style.display = 'flex';
-  });
-  mainMenuCreditBtn.addEventListener('click', ()=>{
-    creditsModal.style.display = 'flex';
-  });
-  closeCreditsBtn.addEventListener('click', ()=>{
-    creditsModal.style.display = 'none';
-  });
+  // Menu utama (mainMenu + kredit) sekarang ada di halaman terpisah (start.html)
+  // yang jauh lebih ringan karena tidak memuat Three.js maupun engine game.
   backToMainMenuBtn.addEventListener('click', ()=>{
-    startOverlay.style.display = 'none';
-    mainMenu.style.display = 'flex';
+    window.location.href = 'start.html';
   });
 
   function requestLock(){
@@ -2121,6 +2433,7 @@ window.addEventListener('error', function(e){
       fireBtn.style.display = 'flex';
       weaponSwitch.style.display = 'flex';
       inspectBtn.style.display = 'flex';
+      reloadBtn.style.display = 'flex';
       editLayoutBtn.style.display = 'block';
       finishBtn.style.display = (gameMode === 'free') ? 'block' : 'none';
       gyroGearBtn.style.display = 'block';
@@ -2243,7 +2556,20 @@ window.addEventListener('error', function(e){
     exitScope();
     stopFiring();
     cancelInspect();
+    // Reload every weapon's magazine back to full and clear any in-progress reload —
+    // starting a fresh run should never carry over a spent or half-reloaded mag.
+    reloading = false;
+    reloadWeaponName = null;
+    reloadBtn.classList.remove('active');
+    ['pistol','sniper','smg'].forEach(name=>{
+      const w = weapons[name];
+      w.ammo = w.magSize;
+      w.group.position.copy(w.basePos);
+      w.group.rotation.copy(w.baseRot);
+      syncAmmoUI(w);
+    });
     setActiveWeapon('pistol');
+    syncAmmoUI(weapons.pistol); // covers the case where currentWeapon was already 'pistol'
     updateDifficulty(0);
     updateHUD();
     // seed a few targets
@@ -2254,12 +2580,16 @@ window.addEventListener('error', function(e){
     running = false;
     stopFiring();
     cancelInspect();
+    reloading = false;
+    reloadWeaponName = null;
+    reloadBtn.classList.remove('active');
     hud.style.display = 'none';
     crosshair.style.display = 'none';
     fireBtn.style.display = 'none';
     weaponSwitch.style.display = 'none';
     scopeBtn.style.display = 'none';
     inspectBtn.style.display = 'none';
+    reloadBtn.style.display = 'none';
     editLayoutBtn.style.display = 'none';
     finishBtn.style.display = 'none';
     gyroGearBtn.style.display = 'none';
@@ -2277,17 +2607,25 @@ window.addEventListener('error', function(e){
   }
 
   // ---------- Main loop ----------
-  // Cap rendering at 120fps: on high-refresh displays (144Hz/165Hz+) requestAnimationFrame
-  // fires faster than the game needs, which wastes GPU/battery and can itself cause
-  // inconsistent frame pacing (stutter). Frames beyond the cap are skipped entirely —
-  // logic and rendering only run when enough real time has actually passed.
-  const MAX_FPS = 120;
-  const MIN_FRAME_MS = 1000 / MAX_FPS;
+  // Cap rendering at the chosen target (90 or 120fps): on high-refresh displays
+  // (144Hz/165Hz+) requestAnimationFrame fires faster than the game needs, which wastes
+  // GPU/battery and can itself cause inconsistent frame pacing (stutter). Frames beyond
+  // the cap are skipped entirely — logic and rendering only run when enough real time has
+  // actually passed.
+  let targetFps = 120;
+  let MIN_FRAME_MS = 1000 / targetFps;
+  function setTargetFps(v){
+    targetFps = v;
+    MIN_FRAME_MS = 1000 / targetFps;
+    document.getElementById('fpsBtn90').classList.toggle('active', v === 90);
+    document.getElementById('fpsBtn120').classList.toggle('active', v === 120);
+  }
   let lastRenderTime = performance.now();
   let lastFrame = performance.now();
 
   // FPS meter: averaged over a short rolling window and refreshed a few times a second,
-  // so the readout is stable/readable instead of jumping every single frame.
+  // so the readout is stable/readable instead of jumping every single frame. Also drives
+  // the adaptive quality scaler above, keeping gameplay smooth at the chosen target.
   const fpsNumEl = document.getElementById('fpsNum');
   const fpsFillEl = document.getElementById('fpsFill');
   let fpsFrameCount = 0;
@@ -2298,18 +2636,19 @@ window.addEventListener('error', function(e){
     if(fpsAccumMs >= 400){ // refresh the readout ~2.5x/sec
       const fps = Math.round((fpsFrameCount * 1000) / fpsAccumMs);
       fpsNumEl.textContent = fps;
-      const pct = Math.max(4, Math.min(100, (fps / MAX_FPS) * 100));
+      const pct = Math.max(4, Math.min(100, (fps / targetFps) * 100));
       fpsFillEl.style.width = pct + '%';
       fpsFillEl.style.background = fps >= 100 ? '#39ff88' : (fps >= 50 ? '#ffd23f' : '#ff4d4d');
       fpsFrameCount = 0;
       fpsAccumMs = 0;
+      adaptQuality(fps);
     }
   }
 
   function animate(now){
     requestAnimationFrame(animate);
 
-    // Skip this rAF tick entirely if we're being called faster than the 120fps cap allows.
+    // Skip this rAF tick entirely if we're being called faster than the target fps allows.
     const sinceRender = now - lastRenderTime;
     if(sinceRender < MIN_FRAME_MS) return;
     lastRenderTime = now - (sinceRender % MIN_FRAME_MS); // subtract drift instead of resetting to `now`
@@ -2370,6 +2709,7 @@ window.addEventListener('error', function(e){
     // weapon recoil recovery (for both weapons, only the visible one matters on screen)
     ['pistol','sniper','smg'].forEach(name=>{
       if(inspecting && name === inspectingWeapon) return; // inspect animation owns this weapon's transform right now
+      if(reloading && name === reloadWeaponName) return;  // reload animation owns this weapon's transform right now
       const w = weapons[name];
       if(w.recoil > 0){
         w.recoil = Math.max(0, w.recoil - dt*8);
@@ -2384,6 +2724,8 @@ window.addEventListener('error', function(e){
     // weapon inspect animation tick — runs after recoil recovery so its position/rotation
     // isn't immediately overwritten; freezes cleanly whenever the round is paused
     if(running && !paused) updateInspect(dt);
+    // reload animation tick — same ordering reasoning as inspect above
+    if(running && !paused) updateReload(dt);
 
     // camera view-kick recovery (subtle upward nudge that settles back down)
     if(viewKick > 0){
