@@ -59,8 +59,17 @@
   #timeBox .hud-value{color:#ffd23f;}
   #accBox .hud-value{color:#5ec8ff;}
   #ammoBox .hud-value{color:#ffb020; transition:color 0.15s ease;}
-  #ammoBox .hud-value.ammo-low{color:#ffd23f;}
+  #ammoBox .hud-value.ammo-low{color:#ffd23f; animation:ammoLowPulse 0.5s ease-in-out infinite;}
   #ammoBox .hud-value.ammo-empty{color:#ff4d4d;}
+  #ammoBox.ammo-low-box{ animation:ammoBoxPulse 0.5s ease-in-out infinite; }
+  @keyframes ammoLowPulse{
+    0%,100%{ opacity:1; text-shadow:0 0 6px rgba(255,210,63,0.5); }
+    50%{ opacity:0.5; text-shadow:0 0 16px rgba(255,210,63,1); }
+  }
+  @keyframes ammoBoxPulse{
+    0%,100%{ box-shadow:0 0 0 rgba(255,210,63,0); }
+    50%{ box-shadow:0 0 14px rgba(255,210,63,0.55); }
+  }
 
   /* Crosshair */
   #crosshair{
@@ -137,6 +146,24 @@
     100%{ transform:translate(-50%,-50%) rotate(45deg) scale(1.3); opacity:0;}
   }
   #hitmarker.show{ animation:hitpop 0.28s ease-out forwards; }
+
+  /* Elimination notification banner — confirms a target has been eliminated */
+  #eliminationNotification{
+    position:fixed; top:22%; left:50%;
+    transform:translate(-50%,-6px) scale(0.85);
+    pointer-events:none; z-index:11; opacity:0;
+    font-size:20px; font-weight:800; letter-spacing:1px;
+    color:var(--accent); text-shadow:0 0 10px rgba(57,255,136,0.7), 0 2px 4px rgba(0,0,0,0.6);
+    white-space:nowrap;
+  }
+  #eliminationNotification.headshot{ color:#ffd23f; text-shadow:0 0 12px rgba(255,210,63,0.85), 0 2px 4px rgba(0,0,0,0.6); }
+  #eliminationNotification.show{ animation:eliminationNotifPop 0.7s ease-out forwards; }
+  @keyframes eliminationNotifPop{
+    0%{ transform:translate(-50%,4px) scale(0.8); opacity:0; }
+    18%{ transform:translate(-50%,-6px) scale(1.08); opacity:1; }
+    32%{ transform:translate(-50%,-8px) scale(1); opacity:1; }
+    100%{ transform:translate(-50%,-26px) scale(1); opacity:0; }
+  }
 
   /* Overlays */
   .overlay{
@@ -443,6 +470,7 @@
 <div id="hitmarker" style="display:none;">
   <div class="h1"></div><div class="h2"></div><div class="h3"></div><div class="h4"></div>
 </div>
+<div id="eliminationNotification"></div>
 <div id="fireBtn">TEMBAK</div>
 <div id="scopeBtn">SCOPE</div>
 <div id="inspectBtn">INSPEKSI</div>
@@ -832,7 +860,9 @@ window.addEventListener('error', function(e){
   // ---------- First-person weapons: pistol + sniper (switchable) ----------
   scene.add(camera); // camera must be in the scene graph for its children to render
   const NORMAL_FOV = 75;
-  const SCOPE_FOV = 18;
+  // Perspective zoom scales with tan(fov/2), bukan rasio FOV linear — 41.98° di sini
+  // menghasilkan magnifikasi optik persis 2x relatif terhadap NORMAL_FOV (75°).
+  const SCOPE_FOV = 41.98;
   const weapons = {};
 
   function makeMuzzleFlash(){
@@ -909,15 +939,24 @@ window.addEventListener('error', function(e){
   }
 
   // Pushes a weapon's current ammo count to both its in-world readout and (if it's the
-  // equipped weapon) the top HUD ammo box.
+  // equipped weapon) the top HUD ammo box. Also fires a one-time low-ammo warning
+  // (flash + beep) the moment a weapon's magazine crosses into the low threshold.
   function syncAmmoUI(w){
     if(!w) return;
-    const color = w.ammo <= 0 ? '#ff4d4d' : (w.ammo <= Math.ceil(w.magSize*0.3) ? '#ffd23f' : '#39ff88');
+    const isLow = w.ammo > 0 && w.ammo <= Math.ceil(w.magSize*0.3);
+    const color = w.ammo <= 0 ? '#ff4d4d' : (isLow ? '#ffd23f' : '#39ff88');
     if(w.ammoReadout) w.ammoReadout.setText(String(w.ammo).padStart(2,'0'), color);
+    if(isLow && !w.lowAmmoWarned){
+      w.lowAmmoWarned = true;
+      if(w === weapons[currentWeapon]) playLowAmmoSound();
+    } else if(!isLow && w.ammo > 0){
+      w.lowAmmoWarned = false;
+    }
     if(w === weapons[currentWeapon]){
       ammoVal.textContent = (w.ammo) + '/' + w.magSize;
       ammoVal.classList.toggle('ammo-empty', w.ammo <= 0);
-      ammoVal.classList.toggle('ammo-low', w.ammo > 0 && w.ammo <= Math.ceil(w.magSize*0.3));
+      ammoVal.classList.toggle('ammo-low', isLow);
+      ammoBox.classList.toggle('ammo-low-box', isLow);
     }
   }
 
@@ -2014,6 +2053,24 @@ window.addEventListener('error', function(e){
     osc.start(now); osc.stop(now+0.05);
   }
 
+  // Low-ammo warning: two short high beeps, fired once the moment a magazine
+  // crosses into its last 30% — distinct from the dry-fire click so it reads
+  // as "running low" rather than "already empty".
+  function playLowAmmoSound(){
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+    [0, 0.12].forEach(delay=>{
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1200, now+delay);
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.18, now+delay);
+      g.gain.exponentialRampToValueAtTime(0.001, now+delay+0.09);
+      osc.connect(g).connect(audioCtx.destination);
+      osc.start(now+delay); osc.stop(now+delay+0.09);
+    });
+  }
+
   // Reload sound: two quick mechanical clacks (mag-out, mag-in).
   function playReloadSound(){
     if(!audioCtx) return;
@@ -2034,6 +2091,7 @@ window.addEventListener('error', function(e){
   const timeVal  = document.getElementById('timeVal');
   const accVal   = document.getElementById('accVal');
   const ammoVal  = document.getElementById('ammoVal');
+  const ammoBox  = document.getElementById('ammoBox');
   const crosshair = document.getElementById('crosshair');
   const hitmarker = document.getElementById('hitmarker');
   const hud = document.getElementById('hud');
@@ -2064,6 +2122,17 @@ window.addEventListener('error', function(e){
     hitmarker.classList.remove('show');
     void hitmarker.offsetWidth; // reflow
     hitmarker.classList.add('show');
+  }
+
+  // Pemberitahuan HUD singkat yang mengonfirmasi sebuah target telah ter-eliminasi
+  // (terpisah dari damage number di titik tembak dan label KILL!/HEADSHOT! di dunia 3D).
+  const eliminationNotification = document.getElementById('eliminationNotification');
+  function showEliminationNotification(isHeadshot){
+    eliminationNotification.textContent = isHeadshot ? '💀 TARGET TER-ELIMINASI (HEADSHOT)!' : '💀 TARGET TER-ELIMINASI!';
+    eliminationNotification.classList.toggle('headshot', isHeadshot);
+    eliminationNotification.classList.remove('show');
+    void eliminationNotification.offsetWidth; // reflow, restarts the animation on rapid re-hits
+    eliminationNotification.classList.add('show');
   }
 
   function flashCrosshair(){
@@ -2108,6 +2177,7 @@ window.addEventListener('error', function(e){
           // kill bonus on top of damage score — faster reaction = more points
           const ageRatio = 1 - Math.min((performance.now()-t.born)/t.life, 1);
           score += 100 + Math.round(ageRatio*50);
+          showEliminationNotification(isHeadshot);
           triggerKillEffect(t, intersects[0].point, isHeadshot);
           spawnTarget();
         }
